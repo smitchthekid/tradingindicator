@@ -1,0 +1,217 @@
+.signals-panel {
+  background: var(--bg-secondary);
+  border-radius: 8px;
+  padding: 1.25rem;
+  border: 1px solid var(--border-color);
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.panel-title {
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0;
+}
+
+.signal-card {
+  background: var(--bg-tertiary);
+  border-radius: 6px;
+  padding: 1rem;
+  border: 1px solid var(--border-color);
+}
+
+.signal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.5rem 0.75rem;
+  border-radius: 4px;
+  margin-bottom: 1rem;
+  font-weight: 600;
+}
+
+.signal-header.signal-buy {
+  background: rgba(16, 185, 129, 0.2);
+  border: 1px solid var(--accent-green);
+  color: var(--accent-green);
+}
+
+.signal-header.signal-sell {
+  background: rgba(239, 68, 68, 0.2);
+  border: 1px solid var(--accent-red);
+  color: var(--accent-red);
+}
+
+.signal-type {
+  font-size: 1.25rem;
+}
+
+.signal-trend {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  opacity: 0.8;
+}
+
+.signal-details {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.detail-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.detail-label {
+  color: var(--text-secondary);
+  font-size: 0.875rem;
+}
+
+.detail-value {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.detail-value.stop-loss {
+  color: var(--accent-red);
+}
+
+.detail-value.target {
+  color: var(--accent-green);
+}
+
+.detail-value.good-rr {
+  color: var(--accent-green);
+}
+
+.detail-value.bad-rr {
+  color: var(--accent-yellow);
+}
+
+.warning-badge {
+  margin-left: 0.5rem;
+  font-size: 0.75rem;
+  opacity: 0.8;
+}
+
+.signal-reason {
+  margin-top: 0.5rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--border-color);
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+}
+
+.no-signal {
+  text-align: center;
+  padding: 2rem;
+  color: var(--text-muted);
+}
+
+.no-signal p {
+  margin-bottom: 0.5rem;
+  font-weight: 500;
+}
+
+.risk-widget {
+  background: var(--bg-tertiary);
+  border-radius: 6px;
+  padding: 1rem;
+  border: 1px solid var(--border-color);
+}
+
+.widget-title {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0 0 1rem 0;
+}
+
+.risk-details {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.risk-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.875rem;
+}
+
+.risk-row span:first-child {
+  color: var(--text-secondary);
+}
+
+.risk-row span:last-child {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.risk-row .highlight {
+  color: var(--accent-blue);
+}
+
+.rr-warning {
+  margin-top: 0.5rem;
+  padding: 0.5rem;
+  background: rgba(245, 158, 11, 0.1);
+  border: 1px solid var(--accent-yellow);
+  border-radius: 4px;
+  color: var(--accent-yellow);
+  font-size: 0.75rem;
+  text-align: center;
+}
+
+.sr-levels {
+  background: var(--bg-tertiary);
+  border-radius: 6px;
+  padding: 1rem;
+  border: 1px solid var(--border-color);
+}
+
+.sr-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.sr-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.5rem;
+  border-radius: 4px;
+  font-size: 0.875rem;
+}
+
+.sr-item.sr-support {
+  background: rgba(16, 185, 129, 0.1);
+  border-left: 3px solid var(--accent-green);
+}
+
+.sr-item.sr-resistance {
+  background: rgba(239, 68, 68, 0.1);
+  border-left: 3px solid var(--accent-red);
+}
+
+.sr-price {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.sr-strength {
+  color: var(--accent-yellow);
+  font-size: 0.75rem;
+}
+
+.sr-touches {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+}
+
