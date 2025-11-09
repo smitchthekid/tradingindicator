@@ -72,22 +72,34 @@ Since your domain is on Cloudflare:
 
 1. **Get DNS Info from Railway:**
    - In Railway dashboard → Settings → Networking
-   - Railway will show you a CNAME target (e.g., `your-project.railway.app`)
+   - Add custom domain: `indicator.pleasecart.net`
+   - Railway will show you a CNAME target (e.g., `your-project.railway.app` or `cname.railway.app`)
 
 2. **Add CNAME in Cloudflare:**
-   - Go to Cloudflare Dashboard → DNS → Records
-   - Click "Add record"
-   - **Type:** CNAME
-   - **Name:** indicator
-   - **Target:** (paste the Railway CNAME target)
-   - **Proxy status:** 
-     - **DNS only** (gray cloud) - recommended for Railway
-     - Or **Proxied** (orange cloud) - if you want Cloudflare CDN
-   - Click "Save"
+   - Go to Cloudflare Dashboard: https://dash.cloudflare.com
+   - Select your domain: **pleasecart.net**
+   - Click **DNS** in left sidebar → **Records** tab
+   - Click **"Add record"** button
+   - Configure:
+     - **Type:** CNAME (select from dropdown)
+     - **Name:** `indicator` (creates indicator.pleasecart.net)
+     - **Target:** (paste the Railway CNAME target exactly as shown)
+     - **Proxy status:** 
+       - **DNS only** (gray cloud icon) - ✅ **Recommended for Railway**
+         - Direct connection to Railway
+         - Railway handles SSL automatically
+       - **Proxied** (orange cloud icon) - Alternative
+         - Traffic goes through Cloudflare CDN
+         - May need additional SSL configuration
+     - **TTL:** Auto (default)
+   - Click **"Save"**
 
-3. **Wait for SSL:**
-   - Railway automatically provisions SSL certificates
-   - Usually takes 1-5 minutes after DNS is configured
+3. **Wait for Propagation:**
+   - **DNS:** < 1 minute (Cloudflare is fast!)
+   - **SSL:** 1-5 minutes (Railway auto-provisions)
+   - Check Railway dashboard for SSL status
+
+**📖 See CLOUDFLARE_DNS_SETUP.md for detailed step-by-step guide with screenshots**
 
 ## Step 4: Configure for Static Site (Vite Build)
 
