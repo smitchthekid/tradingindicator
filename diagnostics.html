@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>App Load Diagnostics</title>
+    <style>
+        body { font-family: monospace; padding: 20px; background: #1a1a1a; color: #0f0; }
+        .metric { margin: 10px 0; padding: 10px; background: #2a2a2a; border-left: 3px solid #0f0; }
+        .warning { border-left-color: #ff0; color: #ff0; }
+        .error { border-left-color: #f00; color: #f00; }
+        h1 { color: #0ff; }
+        h2 { color: #0f0; margin-top: 20px; }
+    </style>
+</head>
+<body>
+    <h1>App Load Diagnostics</h1>
+    <div id="results"></div>
+    
+    <script>
+        const results = document.getElementById('results');
+        const metrics = [];
+        
+        // Measure initial load
+        const startTime = performance.now();
+        const navigationStart = performance.timing?.navigationStart || performance.timeOrigin;
+        
+        function addMetric(label, value, type = 'metric') {
+            metrics.push({ label, value, type });
+            const div = document.createElement('div');
+            div.className = type;
+            div.innerHTML = `<strong>${label}:</strong> ${value}`;
+            results.appendChild(div);
+        }
+        
+        // Wait for page load
+        window.addEventListener('load', () => {
+            const loadTime = performance.now() - startTime;
+            const domContentLoaded = performance.timing?.domContentLoadedEventEnd - performance.timing?.domContentLoadedEventStart;
+            const domInteractive = performance.timing?.domInteractive - navigationStart;
+            const pageLoad = performance.timing?.loadEventEnd - navigationStart;
+            
+            addMetric('Initial Load Time', `${loadTime.toFixed(2)}ms`);
+            addMetric('DOM Content Loaded', domContentLoaded ? `${domContentLoaded}ms` : 'N/A');
+            addMetric('DOM Interactive', domInteractive ? `${domInteractive}ms` : 'N/A');
+            addMetric('Page Load Complete', pageLoad ? `${pageLoad}ms` : 'N/A');
+            
+            // Check resource sizes
+            const resources = performance.getEntriesByType('resource');
+            let totalSize = 0;
+            const resourceSizes = {};
+            
+            resources.forEach(resource => {
+                if (resource.transferSize) {
+                    totalSize += resource.transferSize;
+                    const name = resource.name.split('/').pop();
+                    resourceSizes[name] = {
+                        size: (resource.transferSize / 1024).toFixed(2) + ' KB',
+                        duration: resource.duration.toFixed(2) + 'ms'
+                    };
+                }
+            });
+            
+            addMetric('Total Resource Size', `${(totalSize / 1024).toFixed(2)} KB`);
+            
+            // List largest resources
+            const h2 = document.createElement('h2');
+            h2.textContent = 'Resource Loading Times';
+            results.appendChild(h2);
+            
+            Object.entries(resourceSizes)
+                .sort((a, b) => parseFloat(b[1].size) - parseFloat(a[1].size))
+                .slice(0, 10)
+                .forEach(([name, data]) => {
+                    addMetric(name, `${data.size} (${data.duration})`);
+                });
+            
+            // Performance warnings
+            const h2warn = document.createElement('h2');
+            h2warn.textContent = 'Performance Warnings';
+            results.appendChild(h2warn);
+            
+            if (loadTime > 3000) {
+                addMetric('⚠️ Load Time Warning', `Load time exceeds 3 seconds (${loadTime.toFixed(2)}ms)`, 'warning');
+            }
+            
+            if (totalSize > 1000 * 1024) {
+                addMetric('⚠️ Bundle Size Warning', `Total size exceeds 1MB (${(totalSize / 1024).toFixed(2)} KB)`, 'warning');
+            }
+            
+            // Check for console logs (would need to be checked in actual app)
+            addMetric('Note', 'Check browser console for console.log statements that may slow down production', 'warning');
+        });
+        
+        // Measure React render time (if available)
+        setTimeout(() => {
+            if (window.React) {
+                addMetric('React Detected', 'Yes');
+            }
+        }, 100);
+    </script>
+</body>
+</html>
+

@@ -149,9 +149,9 @@ function detectDeathCross(
 
 /**
  * Generate trading signals with multi-factor logic
- * BUY: Price closes above EMA(20) AND stays above lower volatility band
- * SELL: ATR trailing-stop cross OR death cross of moving averages
- * Enforces 1-2% capital risk per trade
+ * BUY: Price crosses above EMA(20) AND stays above lower volatility band AND near support/resistance
+ * SELL: Price crosses below EMA OR ATR trailing-stop cross OR death cross with increasing ATR volatility
+ * Enforces minimum 1:3 risk-to-reward ratio and 1-2% capital risk per trade
  */
 export function generateSignals(
   data: OHLCVData[],
@@ -178,8 +178,9 @@ export function generateSignals(
   // Multi-factor signal generation
   
   // Factor 1: EMA crossover and position relative to EMA
-  let priceAboveEMA = false;
+  let priceCrossedAboveEMA = false;
   let priceStayedAboveEMA = false;
+  let priceAboveEMA = false;
   
   if (config.ema.enabled && indicators.ema.length > latestIndex && indicators.ema.length > previousIndex) {
     const currentEma = indicators.ema[latestIndex];
@@ -188,6 +189,8 @@ export function generateSignals(
     if (currentEma && !isNaN(currentEma) && previousEma && !isNaN(previousEma)) {
       priceAboveEMA = latest.close > currentEma;
       priceStayedAboveEMA = previous.close > previousEma && latest.close > currentEma;
+      // Check for crossover: price was below EMA, now above
+      priceCrossedAboveEMA = previous.close <= previousEma && latest.close > currentEma;
       
       if (priceAboveEMA) {
         trend = 'BULLISH';
@@ -199,35 +202,109 @@ export function generateSignals(
   
   // Factor 2: Volatility bands
   let priceAboveLowerBand = false;
-  if (config.volatilityBands.enabled && indicators.lowerBand.length > latestIndex) {
+  if (config.volatilityBands.enabled && indicators.lowerBand.length > latestIndex && indicators.lowerBand.length > previousIndex) {
     const lowerBand = indicators.lowerBand[latestIndex];
-    if (lowerBand && !isNaN(lowerBand)) {
+    const previousLowerBand = indicators.lowerBand[previousIndex];
+    if (lowerBand && !isNaN(lowerBand) && previousLowerBand && !isNaN(previousLowerBand)) {
       priceAboveLowerBand = latest.close > lowerBand;
     }
   }
   
-  // Factor 3: ATR trailing stop
+  // Factor 3: ATR trailing stop and volatility
   const trailingStop = calculateATRTrailingStop(data, indicators, config, latestIndex);
   const previousTrailingStop = calculateATRTrailingStop(data, indicators, config, previousIndex);
+  
+  // Check if ATR is increasing (volatility increasing)
+  let atrIncreasing = false;
+  if (config.atr.enabled && indicators.atr.length > latestIndex && indicators.atr.length > previousIndex) {
+    const currentATR = indicators.atr[latestIndex];
+    const previousATR = indicators.atr[previousIndex];
+    if (currentATR && !isNaN(currentATR) && previousATR && !isNaN(previousATR)) {
+      atrIncreasing = currentATR > previousATR;
+    }
+  }
   
   // Factor 4: Death cross detection
   const { isDeathCross, isGoldenCross } = detectDeathCross(data, indicators, config, latestIndex);
   
-  // BUY Signal Logic:
-  // Price closes above EMA(20) AND stays above lower volatility band
-  if (priceAboveEMA && priceStayedAboveEMA && priceAboveLowerBand) {
-    buySignal = true;
-    reason = 'Price above EMA(20) and above lower volatility band';
-    if (isGoldenCross) {
-      reason += ' + Golden cross confirmation';
+  // Factor 5: Support/Resistance levels
+  const supportResistance = detectSupportResistance(data);
+  const currentPrice = latest.close;
+  
+  // Check if price is near support (within 2% for buy signals)
+  const nearSupport = supportResistance
+    .filter(sr => sr.type === 'support')
+    .some(sr => Math.abs(currentPrice - sr.level) / currentPrice <= 0.02);
+  
+  // BUY Signal Logic (refined):
+  // 1. Price crosses above EMA(20) OR stays above EMA
+  // 2. Price stays above lower volatility band
+  // 3. Price near support level (optional but preferred)
+  // 4. Minimum 1:3 risk-to-reward ratio must be achievable
+  const buyConditions = [
+    (priceCrossedAboveEMA || priceStayedAboveEMA),
+    priceAboveLowerBand,
+    // Support level is preferred but not required
+  ];
+  
+  if (buyConditions.every(Boolean)) {
+    // Calculate potential stop loss and target to verify R:R ratio
+    let potentialStopLoss = currentPrice;
+    let potentialTarget = currentPrice;
+    
+    if (config.atr.enabled && indicators.atr.length > latestIndex) {
+      const atr = indicators.atr[latestIndex];
+      if (atr && !isNaN(atr) && atr > 0) {
+        potentialStopLoss = currentPrice - (atr * config.riskManagement.atrStopLossMultiplier);
+        potentialTarget = currentPrice + (atr * config.riskManagement.atrStopLossMultiplier * 3);
+      }
+    } else {
+      potentialStopLoss = currentPrice * 0.98;
+      potentialTarget = currentPrice * 1.06;
+    }
+    
+    const risk = Math.abs(currentPrice - potentialStopLoss);
+    const reward = Math.abs(potentialTarget - currentPrice);
+    const riskRewardRatio = risk > 0 ? reward / risk : 0;
+    
+    // Only generate buy signal if R:R >= 1:3
+    if (riskRewardRatio >= 3) {
+      buySignal = true;
+      reason = 'Price crossed/stayed above EMA(20) and above lower volatility band';
+      if (isGoldenCross) {
+        reason += ' + Golden cross confirmation';
+      }
+      if (nearSupport) {
+        reason += ' + Near support level';
+      }
     }
   }
   
-  // SELL Signal Logic:
-  // ATR trailing-stop cross OR death cross
+  // SELL Signal Logic (refined):
+  // 1. Price crosses below EMA(20) with increasing ATR volatility, OR
+  // 2. ATR trailing-stop cross, OR
+  // 3. Death cross
+  let priceCrossedBelowEMA = false;
+  if (config.ema.enabled && indicators.ema.length > latestIndex && indicators.ema.length > previousIndex) {
+    const currentEma = indicators.ema[latestIndex];
+    const previousEma = indicators.ema[previousIndex];
+    if (currentEma && !isNaN(currentEma) && previousEma && !isNaN(previousEma)) {
+      priceCrossedBelowEMA = previous.close >= previousEma && latest.close < currentEma;
+    }
+  }
+  
+  if (priceCrossedBelowEMA && atrIncreasing) {
+    sellSignal = true;
+    reason = 'Price crossed below EMA with increasing ATR volatility';
+  }
+  
   if (trailingStop.direction === 'DOWN' && previousTrailingStop.direction !== 'DOWN') {
     sellSignal = true;
-    reason = 'ATR trailing stop crossed (trend reversal)';
+    if (reason) {
+      reason += ' + ATR trailing stop crossed';
+    } else {
+      reason = 'ATR trailing stop crossed (trend reversal)';
+    }
   }
   
   if (isDeathCross) {
@@ -236,6 +313,9 @@ export function generateSignals(
       reason += ' + Death cross';
     } else {
       reason = 'Death cross (EMA crossover)';
+    }
+    if (atrIncreasing) {
+      reason += ' with increasing volatility';
     }
   }
   
@@ -249,7 +329,7 @@ export function generateSignals(
   if (buySignal && sellSignal) {
     // Prioritize sell signals (risk management)
     buySignal = false;
-    reason = reason.replace(/Price above EMA.*?band/, '').trim();
+    reason = reason.replace(/Price crossed.*?band/, '').trim();
     if (!reason) {
       reason = 'Conflicting signals - prioritizing sell for risk management';
     }
@@ -315,9 +395,10 @@ export function generateSignals(
     }
     
     // Recalculate target with adjusted stop loss
+    // Enforce minimum 1:3 risk-to-reward ratio
     const adjustedRisk = Math.abs(entryPrice - stopLoss);
     if (buySignal) {
-      target = entryPrice + (adjustedRisk * 3); // 1:3 R:R
+      target = entryPrice + (adjustedRisk * 3); // 1:3 R:R minimum
     } else {
       target = entryPrice - (adjustedRisk * 3);
     }
@@ -325,6 +406,12 @@ export function generateSignals(
     const risk = Math.abs(entryPrice - stopLoss);
     const reward = Math.abs(target - entryPrice);
     const riskRewardRatio = risk > 0 ? reward / risk : 0;
+    
+    // Final validation: only generate signal if R:R >= 1:3
+    if (riskRewardRatio < 3) {
+      // Don't generate signal if R:R is too low
+      return signals;
+    }
     
     signals.push({
       index: latestIndex,

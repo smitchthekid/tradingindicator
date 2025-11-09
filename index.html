@@ -8,9 +8,24 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Raleway:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <title>Indicator Configurator</title>
+    <meta name="description" content="Trading Indicator Configurator - Advanced forecasting and signal generation">
+    <meta name="theme-color" content="#0a0e27">
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <div style="display: flex; justify-content: center; align-items: center; height: 100vh; font-family: 'Raleway', sans-serif; background: #0a0e27; color: #e0e0e0;">
+        <div style="text-align: center;">
+          <div style="width: 50px; height: 50px; border: 4px solid #1a1f3a; border-top: 4px solid #4a9eff; border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto 20px;"></div>
+          <p style="margin: 0; font-size: 16px;">Loading Indicator Configurator...</p>
+        </div>
+      </div>
+      <style>
+        @keyframes spin {
+          0% { transform: rotate(0deg); }
+          100% { transform: rotate(360deg); }
+        }
+      </style>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

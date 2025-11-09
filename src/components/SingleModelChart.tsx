@@ -111,11 +111,26 @@ export const SingleModelChart: React.FC<SingleModelChartProps> = ({
                 fontSize: '0.75rem',
               }}
               labelFormatter={(value) => {
-                if (!value || isNaN(value)) return '';
-                const date = new Date(value);
-                return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+                if (value && !isNaN(value)) {
+                  const date = new Date(value);
+                  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+                }
+                return '';
               }}
-              formatter={(value: any, name: string) => {
+              formatter={(value: any, name: string, props: any) => {
+                // Check if this is a signal point and show enhanced tooltip
+                if (props && props.payload && props.payload.signalType) {
+                  const signal = signals.find(s => {
+                    const marketIdx = marketData.findIndex(m => m.date === props.payload.fullDate);
+                    return marketIdx === s.index;
+                  });
+                  if (signal) {
+                    return [
+                      `${signal.type} Signal\nEntry: $${signal.price.toFixed(2)}\nStop: $${signal.stopLoss.toFixed(2)}\nTarget: $${signal.target.toFixed(2)}\nR:R ${signal.riskRewardRatio.toFixed(2)}:1`,
+                      name
+                    ];
+                  }
+                }
                 if (typeof value === 'number') {
                   return [`$${value.toFixed(2)}`, name];
                 }
@@ -222,22 +237,44 @@ export const SingleModelChart: React.FC<SingleModelChartProps> = ({
               />
             )}
             
-            {/* Signal markers */}
+            {/* Signal markers - aligned with exact candles, closer to price line */}
             {signals.map((signal, idx) => {
               const signalDataPoint = chartData.find(p => {
                 const marketIdx = marketData.findIndex(m => m.date === p.fullDate);
                 return marketIdx === signal.index;
               });
               if (!signalDataPoint || !signalDataPoint.dateTimestamp) return null;
+              
+              const isBuy = signal.type === 'BUY';
+              const color = isBuy ? '#10B981' : '#EF4444';
+              const signalPrice = signal.price;
+              
               return (
-                <ReferenceLine
-                  key={`signal-${modelName}-${idx}`}
-                  x={signalDataPoint.dateTimestamp}
-                  stroke={signal.type === 'BUY' ? '#10B981' : '#EF4444'}
-                  strokeWidth={1.5}
-                  strokeDasharray="5 5"
-                  strokeOpacity={0.8}
-                />
+                <React.Fragment key={`signal-${modelName}-${idx}`}>
+                  {/* Vertical line at signal point */}
+                  <ReferenceLine
+                    x={signalDataPoint.dateTimestamp}
+                    stroke={color}
+                    strokeWidth={1.5}
+                    strokeDasharray="3 3"
+                    strokeOpacity={0.6}
+                  />
+                  {/* Signal marker on price line */}
+                  <ReferenceLine
+                    x={signalDataPoint.dateTimestamp}
+                    y={signalPrice}
+                    stroke={color}
+                    strokeWidth={0}
+                    label={{
+                      value: isBuy ? '▲' : '▼',
+                      position: isBuy ? 'bottom' : 'top',
+                      fill: color,
+                      fontSize: 14,
+                      fontWeight: 'bold',
+                      offset: isBuy ? 6 : -6,
+                    }}
+                  />
+                </React.Fragment>
               );
             })}
           </ComposedChart>

@@ -3,6 +3,7 @@ import { ForecastResult, ForecastConfig, ModelEvaluation, ShortTermModel, LongTe
 import { normalize, denormalize, makeStationary } from './preprocessing';
 import { parseISO, format, addDays, isValid, startOfDay, isAfter } from 'date-fns';
 import { z } from 'zod';
+import { logger } from './logger';
 
 /**
  * Helper function to determine if a model is short-term or long-term
@@ -45,11 +46,11 @@ export function generateForecastDates(
   try {
     baseDate = startOfDay(parseISO(lastDate));
     if (!isValid(baseDate)) {
-      console.error(`Invalid last date for forecast: ${lastDate}`);
+      logger.error(`Invalid last date for forecast: ${lastDate}`);
       return [];
     }
   } catch (error) {
-    console.error(`Error parsing last date: ${lastDate}`, error);
+    logger.error(`Error parsing last date: ${lastDate}`, error);
     return [];
   }
   
@@ -59,7 +60,7 @@ export function generateForecastDates(
   const tomorrow = addDays(today, 1);
   if (isAfter(baseDate, tomorrow)) {
     // Use today as base date instead - don't log as error, just adjust
-    console.warn(`Last historical date (${lastDate}) is in the future. Using today as base date.`);
+    logger.warn(`Last historical date (${lastDate}) is in the future. Using today as base date.`);
     baseDate = today;
   }
   
@@ -78,6 +79,7 @@ export function generateForecastDates(
  * Calculate forecast standard error from historical residuals
  * Uses rolling window of forecast errors to estimate prediction uncertainty
  * Returns standard error for confidence band calibration
+ * For 95% confidence: use ±1.96 × standard error
  */
 function calculateForecastStandardError(
   prices: number[],
@@ -115,6 +117,7 @@ function calculateForecastStandardError(
   }
 
   // Calculate standard deviation of residuals (forecast standard error)
+  // This is the standard error used for prediction intervals
   const meanResidual = residuals.reduce((a, b) => a + b, 0) / residuals.length;
   const variance = residuals.reduce((sum, val) => sum + Math.pow(val - meanResidual, 2), 0) / residuals.length;
   const stdError = Math.sqrt(variance);
@@ -180,7 +183,7 @@ function validateForecastResult(result: ForecastResult): ForecastResult {
     }
     
     if (minLength !== maxLength) {
-      console.warn(`Forecast result arrays have mismatched lengths. Truncating to minimum length: ${minLength}`);
+      logger.warn(`Forecast result arrays have mismatched lengths. Truncating to minimum length: ${minLength}`);
       
       // If minLength is 0, return empty arrays
       if (minLength === 0) {
@@ -207,7 +210,7 @@ function validateForecastResult(result: ForecastResult): ForecastResult {
     forecastResultSchema.parse(result);
     return result;
   } catch (error) {
-    console.error('Forecast result validation failed:', error);
+    logger.error('Forecast result validation failed:', error);
     // Return result anyway but log the error
     return result;
   }
@@ -317,6 +320,7 @@ export function simpleMAForecast(
     forecast.push(currentPrice);
     
     // Proper prediction intervals using standard error
+    // For 95% confidence: ±1.96 × forecast standard error
     // Uncertainty increases with forecast horizon (square root scaling)
     const horizonStdError = stdError * Math.sqrt(i);
     const margin = confidenceMultiplier * horizonStdError;
@@ -533,6 +537,7 @@ export function arimaForecast(
   const lastPrice = sortedPrices[sortedPrices.length - 1];
   
   for (let i = 0; i < forecast.length; i++) {
+    // Calibrated confidence intervals: ±1.96 × forecast standard error for 95% bands
     // Standard error increases with forecast horizon (square root scaling)
     const horizonStdError = residualStdError * Math.sqrt(i + 1);
     const margin = confidenceMultiplier * horizonStdError;
@@ -966,13 +971,13 @@ export function generateShortTermForecast(
   confidenceLevel: number = 0.95
 ): ForecastResult | null {
   if (data.length < 10) {
-    console.warn('Insufficient data for short-term forecast. Need at least 10 data points.');
+    logger.warn('Insufficient data for short-term forecast. Need at least 10 data points.');
     return null;
   }
 
   // Validate forecast period is appropriate for short-term
   if (forecastDays > 14) {
-    console.warn(`Short-term forecast requested for ${forecastDays} days. Consider using long-term forecast for periods > 14 days.`);
+    logger.warn(`Short-term forecast requested for ${forecastDays} days. Consider using long-term forecast for periods > 14 days.`);
   }
 
   try {
@@ -981,10 +986,11 @@ export function generateShortTermForecast(
         return arimaForecast(data, forecastDays, confidenceLevel);
       case 'simple':
       default:
-        return simpleMAForecast(data, 20, forecastDays, confidenceLevel);
+        // Use ARIMA as default instead of simple MA for more robust forecasting
+        return arimaForecast(data, forecastDays, confidenceLevel);
     }
   } catch (error) {
-    console.error('Error generating short-term forecast:', error);
+    logger.error('Error generating short-term forecast:', error);
     return null;
   }
 }
@@ -1005,13 +1011,13 @@ export function generateLongTermForecast(
   confidenceLevel: number = 0.95
 ): ForecastResult | null {
   if (data.length < 20) {
-    console.warn('Insufficient data for long-term forecast. Need at least 20 data points.');
+    logger.warn('Insufficient data for long-term forecast. Need at least 20 data points.');
     return null;
   }
 
   // Validate forecast period is appropriate for long-term
   if (forecastDays < 7) {
-    console.warn(`Long-term forecast requested for ${forecastDays} days. Consider using short-term forecast for periods < 7 days.`);
+    logger.warn(`Long-term forecast requested for ${forecastDays} days. Consider using short-term forecast for periods < 7 days.`);
   }
 
   try {
@@ -1024,7 +1030,7 @@ export function generateLongTermForecast(
         return prophetForecast(data, forecastDays, confidenceLevel);
     }
   } catch (error) {
-    console.error('Error generating long-term forecast:', error);
+    logger.error('Error generating long-term forecast:', error);
     return null;
   }
 }
