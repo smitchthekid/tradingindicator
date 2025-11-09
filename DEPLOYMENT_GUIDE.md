@@ -92,26 +92,46 @@ git push -u origin main
    - Add `indicator.pleasecart.net`
    - Update DNS records as instructed
 
-## Step 3: DNS Configuration
+## Step 3: DNS Configuration (Cloudflare)
 
-You'll need to add a DNS record for `indicator.pleasecart.net`:
+Since `pleasecart.net` is hosted on Cloudflare, configure DNS in your Cloudflare dashboard:
 
 ### For Vercel:
-- **Type:** CNAME
-- **Name:** indicator
-- **Value:** cname.vercel-dns.com (or provided by Vercel)
+1. In Vercel, go to Project Settings → Domains
+2. Add `indicator.pleasecart.net`
+3. Vercel will show you a target (e.g., `cname.vercel-dns.com`)
+4. In Cloudflare Dashboard:
+   - Go to DNS → Records
+   - Click "Add record"
+   - **Type:** CNAME
+   - **Name:** indicator
+   - **Target:** (value from Vercel)
+   - **Proxy status:** DNS only (gray cloud) or Proxied (orange cloud)
+   - Click "Save"
 
 ### For Netlify:
-- **Type:** CNAME
-- **Name:** indicator
-- **Value:** (provided by Netlify)
+1. In Netlify, go to Site Settings → Domain Management
+2. Add `indicator.pleasecart.net`
+3. Get the target from Netlify
+4. In Cloudflare Dashboard:
+   - **Type:** CNAME
+   - **Name:** indicator
+   - **Target:** (value from Netlify)
+   - **Proxy status:** DNS only or Proxied
+   - Click "Save"
 
-### For Cloudflare Pages:
-- **Type:** CNAME
-- **Name:** indicator
-- **Value:** (provided by Cloudflare)
+### For Cloudflare Pages (Recommended for Cloudflare domains):
+1. In Cloudflare Dashboard, go to Pages
+2. Connect your GitHub repository
+3. Build settings:
+   - Build command: `npm run build`
+   - Build output directory: `dist`
+4. Add custom domain:
+   - Go to Custom Domains in your Pages project
+   - Add `indicator.pleasecart.net`
+   - Cloudflare will automatically configure DNS
 
-**Note:** DNS changes can take 24-48 hours to propagate.
+**Note:** With Cloudflare, DNS changes propagate almost instantly (usually < 1 minute).
 
 ## Step 4: Environment Variables (if needed)
 

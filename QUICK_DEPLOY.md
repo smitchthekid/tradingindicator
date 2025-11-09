@@ -28,16 +28,34 @@ git push -u origin main
    - Output Directory: `dist`
 6. **Click:** "Deploy"
 
-## ✅ Step 3: Add Custom Domain
+## ✅ Step 3: Add Custom Domain (Cloudflare)
 
+Since your domain is on Cloudflare:
+
+### Option A: Use Vercel (with Cloudflare DNS)
 1. In Vercel project, go to **Settings** → **Domains**
 2. Add: `indicator.pleasecart.net`
-3. Vercel will show DNS instructions:
+3. Vercel will show a target (e.g., `cname.vercel-dns.com`)
+4. In **Cloudflare Dashboard:**
+   - Go to **DNS** → **Records**
+   - Click **"Add record"**
    - **Type:** CNAME
    - **Name:** indicator
-   - **Value:** (provided by Vercel)
-4. Add this CNAME record in your DNS provider (where pleasecart.net is hosted)
-5. Wait 5-60 minutes for DNS to propagate
+   - **Target:** (paste value from Vercel)
+   - **Proxy status:** DNS only (gray cloud) or Proxied (orange cloud)
+   - Click **"Save"**
+5. DNS propagates in < 1 minute with Cloudflare!
+
+### Option B: Use Cloudflare Pages (Recommended - Free & Fast)
+1. In Cloudflare Dashboard, go to **Pages**
+2. Click **"Create a project"** → **"Connect to Git"**
+3. Select your GitHub repository
+4. Build settings:
+   - **Build command:** `npm run build`
+   - **Build output directory:** `dist`
+5. Click **"Save and Deploy"**
+6. Go to **Custom Domains** → Add `indicator.pleasecart.net`
+7. Cloudflare auto-configures DNS - no manual setup needed!
 
 ## ✅ Done!
 
