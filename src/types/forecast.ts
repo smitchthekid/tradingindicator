@@ -1,6 +1,11 @@
+// Model type definitions
+export type ShortTermModel = 'simple' | 'arima';
+export type LongTermModel = 'prophet' | 'lstm';
+export type ForecastModel = ShortTermModel | LongTermModel;
+
 export interface ForecastConfig {
   enabled: boolean;
-  model: 'arima' | 'prophet' | 'lstm' | 'simple';
+  model: ForecastModel;
   forecastPeriod: number; // days to forecast
   confidenceLevel: number; // 0-1, e.g., 0.95 for 95% confidence
 }

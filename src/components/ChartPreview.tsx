@@ -1,7 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { useAtom } from 'jotai';
 import {
-  LineChart,
   Line,
   XAxis,
   YAxis,
@@ -10,12 +9,9 @@ import {
   Legend,
   ResponsiveContainer,
   ReferenceLine,
-  Cell,
-  Area,
-  AreaChart,
   ComposedChart,
 } from 'recharts';
-import { configAtom } from '../atoms/config';
+import { configAtom, persistConfigAtom } from '../atoms/config';
 import { marketDataAtom, indicatorsAtom, loadingAtom, errorAtom } from '../atoms/data';
 import {
   forecastModelAtom,
@@ -26,31 +22,33 @@ import {
   arimaForecastAtom,
   prophetForecastAtom,
   lstmForecastAtom,
-  activeForecastAtom,
   forecastLoadingAtom,
   forecastErrorAtom,
   forecastCache,
 } from '../atoms/forecast';
 import { fetchMarketData } from '../services/api';
 import { calculateIndicators } from '../utils/calculations';
-import { getCachedData, getCacheAge, clearCache } from '../utils/cache';
+import { getCachedData } from '../utils/cache';
 import { generateSignals, detectSupportResistance, calculateRiskMetrics } from '../utils/signals';
 import { TradingSignal, SupportResistance, RiskMetrics } from '../types';
-import { generateForecast, simpleMAForecast, arimaForecast, prophetForecast, lstmForecast } from '../utils/forecasting';
+import { 
+  generateShortTermForecast,
+  generateLongTermForecast,
+} from '../utils/forecasting';
 import { ForecastResult } from '../types/forecast';
 import { SignalsPanel } from './SignalsPanel';
 import { ForecastPanel } from './ForecastPanel';
 import { MetricsTabs } from './MetricsTabs';
+import { SingleModelChart } from './SingleModelChart';
 import './ChartPreview.css';
 
 export const ChartPreview: React.FC = () => {
-  const [config] = useAtom(configAtom);
+  const [config, setConfig] = useAtom(configAtom);
+  const [, persistConfig] = useAtom(persistConfigAtom);
   const [marketData, setMarketData] = useAtom(marketDataAtom);
   const [indicators, setIndicators] = useAtom(indicatorsAtom);
   const [loading, setLoading] = useAtom(loadingAtom);
   const [error, setError] = useAtom(errorAtom);
-  const [isCached, setIsCached] = useState(false);
-  const [cacheAge, setCacheAge] = useState<number | null>(null);
   const [lastSymbol, setLastSymbol] = useState<string>('');
   const [signals, setSignals] = useState<TradingSignal[]>([]);
   const [supportResistance, setSupportResistance] = useState<SupportResistance[]>([]);
@@ -61,13 +59,16 @@ export const ChartPreview: React.FC = () => {
   const [forecastEnabled, setForecastEnabled] = useAtom(forecastEnabledAtom);
   const [forecastPeriod, setForecastPeriod] = useAtom(forecastPeriodAtom);
   const [forecastConfidence, setForecastConfidence] = useAtom(forecastConfidenceAtom);
-  const [simpleForecast, setSimpleForecast] = useAtom(simpleForecastAtom);
-  const [arimaForecast, setArimaForecast] = useAtom(arimaForecastAtom);
-  const [prophetForecast, setProphetForecast] = useAtom(prophetForecastAtom);
-  const [lstmForecast, setLstmForecast] = useAtom(lstmForecastAtom);
-  const [forecastLoading, setForecastLoading] = useAtom(forecastLoadingAtom);
-  const [forecastError, setForecastError] = useAtom(forecastErrorAtom);
-  const [activeForecast] = useAtom(activeForecastAtom);
+  const [simpleForecast] = useAtom(simpleForecastAtom);
+  const [arimaForecast] = useAtom(arimaForecastAtom);
+  const [prophetForecast] = useAtom(prophetForecastAtom);
+  const [lstmForecast] = useAtom(lstmForecastAtom);
+  const [, setSimpleForecast] = useAtom(simpleForecastAtom);
+  const [, setArimaForecast] = useAtom(arimaForecastAtom);
+  const [, setProphetForecast] = useAtom(prophetForecastAtom);
+  const [, setLstmForecast] = useAtom(lstmForecastAtom);
+  const [, setForecastLoading] = useAtom(forecastLoadingAtom);
+  const [, setForecastError] = useAtom(forecastErrorAtom);
 
   const loadData = useCallback(async (forceRefresh: boolean = false) => {
     if (!config.symbol || !config.apiKey) {
@@ -90,15 +91,11 @@ export const ChartPreview: React.FC = () => {
         setError(response.error);
         setMarketData([]);
         setIndicators(null);
-        setIsCached(false);
-        setCacheAge(null);
       } else {
         if (response.data.length === 0) {
           setError('No data returned. Check symbol format and API key.');
           setMarketData([]);
           setIndicators(null);
-          setIsCached(false);
-          setCacheAge(null);
         } else {
           // Log received data for debugging
           console.log(`ChartPreview: Received ${response.data.length} data points`);
@@ -115,18 +112,12 @@ export const ChartPreview: React.FC = () => {
           setMarketData(response.data);
           const calculated = calculateIndicators(response.data, config);
           setIndicators(calculated);
-          
-          // Update cache status based on API response
-          setIsCached(response.fromCache === true);
-          setCacheAge(getCacheAge(config.symbol, config.apiProvider));
         }
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to fetch data');
       setMarketData([]);
       setIndicators(null);
-      setIsCached(false);
-      setCacheAge(null);
     } finally {
       setLoading(false);
     }
@@ -141,8 +132,6 @@ export const ChartPreview: React.FC = () => {
         setMarketData(cached);
         const calculated = calculateIndicators(cached, config);
         setIndicators(calculated);
-        setIsCached(true);
-        setCacheAge(getCacheAge(config.symbol, config.apiProvider));
       } else {
         // Auto-fetch if no cache exists
         loadData(false);
@@ -162,8 +151,6 @@ export const ChartPreview: React.FC = () => {
         setMarketData(cached);
         const calculated = calculateIndicators(cached, config);
         setIndicators(calculated);
-        setIsCached(true);
-        setCacheAge(getCacheAge(config.symbol, config.apiProvider));
       } else {
         // Only auto-fetch if no cache exists
         const timer = setTimeout(() => {
@@ -210,48 +197,47 @@ export const ChartPreview: React.FC = () => {
       const period = forecastPeriod;
       const confidence = forecastConfidence;
 
-      // Compute Simple MA forecast (with cache check)
+      // Compute forecasts using new separated functions
+      // Short-term models (trend-based)
       const cachedSimple = forecastCache.get('simple', symbol, marketData, period, confidence);
       if (cachedSimple) {
         setSimpleForecast(cachedSimple);
       } else {
-        const simpleResult = simpleMAForecast(marketData, 20, period, confidence);
+        const simpleResult = generateShortTermForecast(marketData, 'simple', period, confidence);
         if (simpleResult) {
           forecastCache.set('simple', symbol, marketData, period, confidence, simpleResult);
           setSimpleForecast(simpleResult);
         }
       }
 
-      // Compute ARIMA forecast (with cache check)
       const cachedArima = forecastCache.get('arima', symbol, marketData, period, confidence);
       if (cachedArima) {
         setArimaForecast(cachedArima);
       } else {
-        const arimaResult = arimaForecast(marketData, period, confidence);
+        const arimaResult = generateShortTermForecast(marketData, 'arima', period, confidence);
         if (arimaResult) {
           forecastCache.set('arima', symbol, marketData, period, confidence, arimaResult);
           setArimaForecast(arimaResult);
         }
       }
 
-      // Compute Prophet forecast (with cache check)
+      // Long-term models (statistical/pattern-based)
       const cachedProphet = forecastCache.get('prophet', symbol, marketData, period, confidence);
       if (cachedProphet) {
         setProphetForecast(cachedProphet);
       } else {
-        const prophetResult = prophetForecast(marketData, period, confidence);
+        const prophetResult = generateLongTermForecast(marketData, 'prophet', period, confidence);
         if (prophetResult) {
           forecastCache.set('prophet', symbol, marketData, period, confidence, prophetResult);
           setProphetForecast(prophetResult);
         }
       }
 
-      // Compute LSTM forecast (with cache check)
       const cachedLstm = forecastCache.get('lstm', symbol, marketData, period, confidence);
       if (cachedLstm) {
         setLstmForecast(cachedLstm);
       } else {
-        const lstmResult = lstmForecast(marketData, period, confidence);
+        const lstmResult = generateLongTermForecast(marketData, 'lstm', period, confidence);
         if (lstmResult) {
           forecastCache.set('lstm', symbol, marketData, period, confidence, lstmResult);
           setLstmForecast(lstmResult);
@@ -401,104 +387,141 @@ export const ChartPreview: React.FC = () => {
       return timeA - timeB;
     });
 
+  // Helper function to normalize dates to midnight for accurate comparison
+  const normalizeDate = (date: Date | string): Date => {
+    const d = typeof date === 'string' ? new Date(date) : date;
+    const normalized = new Date(d);
+    normalized.setHours(0, 0, 0, 0);
+    return normalized;
+  };
+
   // Get the last historical date to ensure forecast starts immediately after
   const lastHistoricalDate = chartData.length > 0 
-    ? new Date(chartData[chartData.length - 1].fullDate)
+    ? normalizeDate(chartData[chartData.length - 1].fullDate)
     : null;
   
-  // Add forecast data points separately (using activeForecast from atoms)
-  // Forecast should only start AFTER the last historical point
-  const forecastData = activeForecast && activeForecast.dates.length > 0 && lastHistoricalDate
-    ? activeForecast.dates
-        .map((date, idx) => {
-          const dateObj = new Date(date);
-          
-          // Validate forecast date is after last historical date
-          if (dateObj <= lastHistoricalDate) {
-            console.warn(`Forecast date ${date} is not after last historical date ${lastHistoricalDate.toISOString().split('T')[0]}`);
-            return null;
-          }
-          
-          // Ensure forecast date is in the future (not historical)
-          if (dateObj <= today) {
-            console.warn(`Forecast date ${date} is not in the future`);
-            return null;
-          }
-          
-          const predicted = activeForecast.predicted[idx];
-          const lower = activeForecast.lowerBound[idx];
-          const upper = activeForecast.upperBound[idx];
-          
-          // Ensure bounds are different and visible
-          const minBound = Math.min(lower, predicted * 0.98);
-          const maxBound = Math.max(upper, predicted * 1.02);
-          
-          return {
-            date: dateObj.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
-            fullDate: date,
-            dateTimestamp: dateObj.getTime(), // For sorting
-            close: predicted,
-            high: maxBound,
-            low: minBound,
-            isForecast: true,
-            isHistorical: false, // Mark as forecast data
-            forecastLower: minBound,
-            forecastUpper: maxBound,
-            // Set historical indicators to null for forecast points
-            ema: null,
-            upperBand: null,
-            lowerBand: null,
-            atr: null,
-          };
-        })
-        .filter((point): point is NonNullable<typeof point> => point !== null)
-        .sort((a, b) => a.dateTimestamp - b.dateTimestamp) // Sort forecast data
-    : [];
-
-  // Combine historical and forecast data
-  // Historical data comes first, then forecast immediately after
-  const allChartData = [...chartData, ...forecastData]
-    .map(point => {
-      // Ensure every point has a valid timestamp
+  // Normalize today to midnight for comparison
+  const todayNormalized = normalizeDate(today);
+  const todayTimestamp = todayNormalized.getTime();
+  
+  // Helper function to process forecast data for a given forecast result
+  const processForecastData = (forecast: ForecastResult | null): { forecastData: any[], fullForecastData: any[] } => {
+    if (!forecast || !forecast.dates.length || !lastHistoricalDate) {
+      return { forecastData: [], fullForecastData: [] };
+    }
+    
+    const forecastData = forecast.dates
+      .map((date: string, idx: number) => {
+        const dateObj = normalizeDate(date);
+        
+        if (dateObj.getTime() <= lastHistoricalDate.getTime()) return null;
+        if (dateObj.getTime() < todayNormalized.getTime()) return null;
+        if (idx >= forecast.predicted.length || idx >= forecast.lowerBound.length || idx >= forecast.upperBound.length) return null;
+        
+        const predicted = forecast.predicted[idx];
+        const lower = forecast.lowerBound[idx];
+        const upper = forecast.upperBound[idx];
+        
+        if (isNaN(predicted) || isNaN(lower) || isNaN(upper)) return null;
+        
+        const maxZScore = 1.96;
+        const priceStdDev = Math.abs(upper - lower) / 2;
+        const clampedStdDev = Math.min(priceStdDev, predicted * 0.1);
+        const clampedMargin = maxZScore * clampedStdDev;
+        
+        const minBound = Math.max(0, predicted - clampedMargin);
+        const maxBound = predicted + clampedMargin;
+        
+        return {
+          date: dateObj.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+          fullDate: date,
+          dateTimestamp: dateObj.getTime(),
+          close: predicted,
+          high: maxBound,
+          low: minBound,
+          isForecast: true,
+          isHistorical: false,
+          forecastLower: minBound,
+          forecastUpper: maxBound,
+          ema: null,
+          upperBand: null,
+          lowerBand: null,
+          atr: null,
+        };
+      })
+      .filter((point: any): point is NonNullable<typeof point> => point !== null)
+      .sort((a: any, b: any) => a.dateTimestamp - b.dateTimestamp);
+    
+    const fullForecastData = chartData.length > 0 && forecastData.length > 0 
+      ? [
+          {
+            ...chartData[chartData.length - 1],
+            isConnector: true,
+            forecastLower: chartData[chartData.length - 1].close,
+            forecastUpper: chartData[chartData.length - 1].close,
+          },
+          ...forecastData
+        ]
+      : forecastData;
+    
+    return { forecastData, fullForecastData };
+  };
+  
+  // Process forecast data for each model
+  const simpleForecastData = processForecastData(simpleForecast);
+  const arimaForecastData = processForecastData(arimaForecast);
+  const prophetForecastData = processForecastData(prophetForecast);
+  const lstmForecastData = processForecastData(lstmForecast);
+  
+  // Calculate Y-axis domain (shared across all charts for consistency)
+  const calculateYDomain = () => {
+    const allPrices: number[] = [];
+    chartData.forEach(point => {
+      if (point.close && !isNaN(point.close)) {
+        allPrices.push(point.close);
+      }
+    });
+    [simpleForecastData, arimaForecastData, prophetForecastData, lstmForecastData].forEach(({ forecastData }) => {
+      forecastData.forEach((point: any) => {
+        if (point.close && !isNaN(point.close)) {
+          allPrices.push(point.close);
+        }
+      });
+    });
+    
+    if (allPrices.length === 0) return [0, 100] as [number, number];
+    
+    const sorted = [...allPrices].sort((a, b) => a - b);
+    const median = sorted[Math.floor(sorted.length / 2)];
+    const mean = allPrices.reduce((a, b) => a + b, 0) / allPrices.length;
+    const variance = allPrices.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / allPrices.length;
+    const stdDev = Math.sqrt(variance);
+    
+    const min = Math.max(0, median - 2 * stdDev);
+    const max = median + 2 * stdDev;
+    const padding = (max - min) * 0.05;
+    
+    return [min - padding, max + padding] as [number, number];
+  };
+  
+  const yDomain = calculateYDomain();
+  
+  // Legacy code for single chart when forecasting is disabled
+  // Combine historical data for non-forecast view
+  const allChartData = chartData
+    .map((point: any) => {
       if (!point.dateTimestamp && point.fullDate) {
         point.dateTimestamp = new Date(point.fullDate).getTime();
       }
       return point;
     })
-    .filter(point => point.dateTimestamp && !isNaN(point.dateTimestamp))
-    .sort((a, b) => {
+    .filter((point: any) => point.dateTimestamp && !isNaN(point.dateTimestamp))
+    .sort((a: any, b: any) => {
       const timeA = a.dateTimestamp;
       const timeB = b.dateTimestamp;
       return timeA - timeB;
     });
   
-  // Log for debugging
-  if (allChartData.length > 0) {
-    const firstDate = new Date(allChartData[0].dateTimestamp);
-    const lastDate = new Date(allChartData[allChartData.length - 1].dateTimestamp);
-    const historicalCount = chartData.length;
-    const forecastCount = forecastData.length;
-    const daysDiff = Math.floor((lastDate.getTime() - firstDate.getTime()) / (1000 * 60 * 60 * 24));
-    
-    console.log(`Chart data: ${historicalCount} historical + ${forecastCount} forecast = ${allChartData.length} total points`);
-    console.log(`Date range: ${firstDate.toISOString().split('T')[0]} to ${lastDate.toISOString().split('T')[0]} (${daysDiff} days)`);
-    
-    if (historicalCount < 90) {
-      console.warn(`⚠️ Insufficient historical data: ${historicalCount} days. Aim for 6-12 months (180-365 days) for best results.`);
-    }
-  }
-  
-  // Separate data for forecast rendering (includes connector point)
-  const fullForecastData = chartData.length > 0 && forecastData.length > 0 
-    ? [
-        // Connector point: last historical point (for smooth line connection)
-        {
-          ...chartData[chartData.length - 1],
-          isConnector: true,
-        },
-        ...forecastData
-      ]
-    : forecastData;
 
 
   if (loading) {
@@ -509,23 +532,97 @@ export const ChartPreview: React.FC = () => {
     );
   }
 
-  if (error) {
-    const isCrypto = ['BTC', 'ETH', 'SOL', 'BNB', 'ADA', 'XRP', 'DOT', 'DOGE'].includes(config.symbol.toUpperCase());
+  // Show error as dismissible banner instead of blocking the entire interface
+  const [errorDismissed, setErrorDismissed] = useState(false);
+  
+  // Reset dismissed state when error changes
+  useEffect(() => {
+    setErrorDismissed(false);
+  }, [error]);
+  
+  if (error && !errorDismissed) {
+    const isCrypto = ['BTC', 'ETH', 'SOL', 'BNB', 'ADA', 'XRP', 'DOT', 'DOGE', 'AVAX', 'SHIB', 'MATIC', 'LTC', 'UNI', 'LINK', 'ATOM', 'ETC', 'XLM', 'BCH', 'ALGO', 'VET', 'ICP', 'FIL', 'TRX', 'EOS', 'AAVE', 'THETA', 'XMR', 'MKR', 'DASH', 'ZEC'].includes(config.symbol.toUpperCase());
     const suggestion = isCrypto && config.apiProvider === 'eodhd' 
       ? ' Try switching to Alpha Vantage provider for cryptocurrency data.'
       : '';
     
+    const handleSwitchProvider = () => {
+      const newConfig = { ...config, apiProvider: 'alphavantage' as const };
+      setConfig(newConfig);
+      persistConfig(newConfig);
+      setErrorDismissed(true);
+      loadData(false);
+    };
+    
     return (
       <div className="chart-preview">
-        <div className="error-state">
-          <h3>Error</h3>
-          <p>{error}{suggestion}</p>
-          {isCrypto && config.apiProvider === 'eodhd' && (
-            <p style={{ marginTop: '1rem', fontSize: '0.875rem', color: 'var(--text-muted)' }}>
-              💡 Tip: EODHD may require premium subscription for crypto. Switch to Alpha Vantage for free crypto data.
-            </p>
-          )}
+        <div className="error-banner">
+          <div className="error-content">
+            <h3 style={{ margin: 0, marginBottom: '0.5rem', color: 'var(--accent-red)' }}>Error</h3>
+            <p style={{ margin: 0, marginBottom: '0.75rem' }}>{error}{suggestion}</p>
+            {isCrypto && config.apiProvider === 'eodhd' && (
+              <div style={{ marginTop: '0.75rem' }}>
+                <p style={{ fontSize: '0.875rem', color: 'var(--text-muted)', marginBottom: '0.5rem' }}>
+                  💡 Tip: EODHD may require premium subscription for crypto. Switch to Alpha Vantage for free crypto data.
+                </p>
+                <button
+                  onClick={handleSwitchProvider}
+                  style={{
+                    padding: '0.5rem 1rem',
+                    background: 'var(--accent-blue)',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '6px',
+                    cursor: 'pointer',
+                    fontSize: '0.875rem',
+                    fontWeight: '500',
+                    marginRight: '0.5rem'
+                  }}
+                >
+                  Switch to Alpha Vantage
+                </button>
+                <button
+                  onClick={() => setErrorDismissed(true)}
+                  style={{
+                    padding: '0.5rem 1rem',
+                    background: 'var(--bg-tertiary)',
+                    color: 'var(--text-primary)',
+                    border: '1px solid var(--border-color)',
+                    borderRadius: '6px',
+                    cursor: 'pointer',
+                    fontSize: '0.875rem',
+                    fontWeight: '500'
+                  }}
+                >
+                  Dismiss
+                </button>
+              </div>
+            )}
+            {(!isCrypto || config.apiProvider !== 'eodhd') && (
+              <button
+                onClick={() => setErrorDismissed(true)}
+                style={{
+                  padding: '0.5rem 1rem',
+                  background: 'var(--bg-tertiary)',
+                  color: 'var(--text-primary)',
+                  border: '1px solid var(--border-color)',
+                  borderRadius: '6px',
+                  cursor: 'pointer',
+                  fontSize: '0.875rem',
+                  fontWeight: '500'
+                }}
+              >
+                Dismiss
+              </button>
+            )}
+          </div>
         </div>
+        {marketData.length === 0 && (
+          <div className="empty-state">
+            <h3>No Data</h3>
+            <p>Enter a symbol and API key to load market data</p>
+          </div>
+        )}
       </div>
     );
   }
@@ -543,43 +640,74 @@ export const ChartPreview: React.FC = () => {
 
   return (
     <div className="chart-preview">
-      <div className="chart-header">
-        <div className="header-left">
-          <h2>{config.symbol} - Price Chart</h2>
-          {isCached && cacheAge !== null && (
-            <div className="cache-badge">
-              <span className="cache-icon">💾</span>
-              <span>Cached ({cacheAge}m ago)</span>
-            </div>
-          )}
+      {/* Show all 4 model charts in a grid when forecasting is enabled */}
+      {forecastEnabled ? (
+        <div className="models-grid">
+          <SingleModelChart
+            modelName="simple"
+            modelLabel="Simple MA"
+            forecast={simpleForecast}
+            chartData={chartData}
+            forecastData={simpleForecastData.forecastData}
+            fullForecastData={simpleForecastData.fullForecastData}
+            config={config}
+            indicators={indicators}
+            signals={signals}
+            marketData={marketData}
+            todayTimestamp={todayTimestamp}
+            yDomain={yDomain}
+          />
+          <SingleModelChart
+            modelName="arima"
+            modelLabel="ARIMA"
+            forecast={arimaForecast}
+            chartData={chartData}
+            forecastData={arimaForecastData.forecastData}
+            fullForecastData={arimaForecastData.fullForecastData}
+            config={config}
+            indicators={indicators}
+            signals={signals}
+            marketData={marketData}
+            todayTimestamp={todayTimestamp}
+            yDomain={yDomain}
+          />
+          <SingleModelChart
+            modelName="prophet"
+            modelLabel="Prophet"
+            forecast={prophetForecast}
+            chartData={chartData}
+            forecastData={prophetForecastData.forecastData}
+            fullForecastData={prophetForecastData.fullForecastData}
+            config={config}
+            indicators={indicators}
+            signals={signals}
+            marketData={marketData}
+            todayTimestamp={todayTimestamp}
+            yDomain={yDomain}
+          />
+          <SingleModelChart
+            modelName="lstm"
+            modelLabel="LSTM"
+            forecast={lstmForecast}
+            chartData={chartData}
+            forecastData={lstmForecastData.forecastData}
+            fullForecastData={lstmForecastData.fullForecastData}
+            config={config}
+            indicators={indicators}
+            signals={signals}
+            marketData={marketData}
+            todayTimestamp={todayTimestamp}
+            yDomain={yDomain}
+          />
         </div>
-        <div className="header-right">
-          <button
-            onClick={() => {
-              clearCache();
-              loadData(true);
-            }}
-            disabled={loading || !config.symbol || !config.apiKey}
-            className="refresh-button"
-            title="Clear cache and refresh data from API"
-          >
-            {loading ? '⏳' : '🔄'} Refresh
-          </button>
-          {indicators && indicators.positionSize > 0 && (
-            <div className="position-info">
-              <span>Position: {indicators.positionSize} shares</span>
-            </div>
-          )}
-        </div>
-      </div>
-
-      <div className="chart-container" style={{ width: '100%', height: '500px', minHeight: '500px' }}>
-        <ResponsiveContainer width="100%" height="100%">
-          <ComposedChart 
-            data={allChartData} 
-            margin={{ top: 5, right: 30, left: 20, bottom: 80 }}
-          >
-            <CartesianGrid strokeDasharray="3 3" stroke="#475569" />
+      ) : (
+        <div className="chart-container" style={{ width: '100%', height: '500px', minHeight: '500px' }}>
+          <ResponsiveContainer width="100%" height="100%">
+            <ComposedChart 
+              data={allChartData} 
+              margin={{ top: 5, right: 30, left: 20, bottom: 80 }}
+            >
+            <CartesianGrid strokeDasharray="3 3" stroke="#334155" strokeOpacity={0.3} />
             <XAxis
               dataKey="dateTimestamp"
               type="number"
@@ -600,7 +728,7 @@ export const ChartPreview: React.FC = () => {
             <YAxis
               stroke="#94A3B8"
               tick={{ fill: '#94A3B8' }}
-              domain={['auto', 'auto']}
+              domain={yDomain}
               allowDataOverflow={false}
             />
             <Tooltip
@@ -609,129 +737,47 @@ export const ChartPreview: React.FC = () => {
                 border: '1px solid #475569',
                 borderRadius: '6px',
                 color: '#F1F5F9',
+                padding: '0.5rem',
+              }}
+              labelFormatter={(value) => {
+                if (!value || isNaN(value)) return '';
+                const date = new Date(value);
+                return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+              }}
+              formatter={(value: any, name: string) => {
+                if (typeof value === 'number') {
+                  return [`$${value.toFixed(2)}`, name];
+                }
+                return [value, name];
               }}
             />
-            <Legend wrapperStyle={{ color: '#CBD5E1' }} />
+            <Legend 
+              wrapperStyle={{ color: '#CBD5E1', paddingTop: '1rem' }}
+              iconType="line"
+            />
             
-              {/* Historical price line - only for historical data */}
-              <Line
-                type="monotone"
-                dataKey="close"
-                stroke="#F1F5F9"
-                strokeWidth={2}
-                name="Close Price"
-                dot={false}
-                connectNulls={false}
-                data={chartData} // Only use historical data for price line
-              />
-            {/* Signal markers on historical price line */}
+            {/* Layer 1: Historical price line - base layer */}
             <Line
               type="monotone"
               dataKey="close"
-              stroke="transparent"
-              strokeWidth={0}
-              name=""
-              data={chartData} // Only show signals on historical data
-              dot={(props: any) => {
-                const { payload, cx, cy } = props;
-                // Only show signals on historical data
-                if (!payload || payload.isForecast || !payload.signal) return null;
-                
-                const isBuy = payload.signal === 'BUY';
-                const color = isBuy ? '#10B981' : '#EF4444';
-                const size = 12;
-                
-                return (
-                  <g key={`signal-marker-${payload.fullDate}-${payload.signal}`}>
-                    <polygon
-                      points={isBuy 
-                        ? `${cx},${cy - size} ${cx - size/2},${cy + size/2} ${cx + size/2},${cy + size/2}`
-                        : `${cx},${cy + size} ${cx - size/2},${cy - size/2} ${cx + size/2},${cy - size/2}`
-                      }
-                      fill={color}
-                      stroke={color}
-                      strokeWidth={2}
-                    />
-                    <text
-                      x={cx}
-                      y={isBuy ? cy - size - 8 : cy + size + 20}
-                      fill={color}
-                      fontSize={11}
-                      fontWeight="bold"
-                      textAnchor="middle"
-                    >
-                      {payload.signal}
-                    </text>
-                  </g>
-                );
-              }}
+              stroke="#F1F5F9"
+              strokeWidth={2}
+              name="Close Price"
+              dot={false}
+              connectNulls={false}
+              data={chartData}
+              isAnimationActive={false}
             />
-            
-            {/* Forecast line with confidence intervals */}
-            {activeForecast && fullForecastData.length > 0 && (
-              <>
-                {/* Confidence interval area */}
-                <defs>
-                  <linearGradient id="forecastGradient" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#F59E0B" stopOpacity={0.15}/>
-                    <stop offset="95%" stopColor="#F59E0B" stopOpacity={0.05}/>
-                  </linearGradient>
-                </defs>
-                <Area
-                  type="monotone"
-                  dataKey="forecastUpper"
-                  base="forecastLower"
-                  stroke="none"
-                  fill="url(#forecastGradient)"
-                  data={fullForecastData}
-                  connectNulls={true}
-                  name={`${(activeForecast.confidence * 100).toFixed(0)}% Confidence`}
-                />
-                <Line
-                  type="monotone"
-                  dataKey="close"
-                  stroke="#F59E0B"
-                  strokeWidth={2.5}
-                  strokeDasharray="5 5"
-                  name={`Forecast (${activeForecast.model})`}
-                  dot={false}
-                  data={fullForecastData}
-                  connectNulls={true}
-                  isAnimationActive={false}
-                />
-                <Line
-                  type="monotone"
-                  dataKey="forecastUpper"
-                  stroke="#F59E0B"
-                  strokeWidth={1}
-                  strokeDasharray="3 3"
-                  strokeOpacity={0.5}
-                  dot={false}
-                  data={fullForecastData}
-                  connectNulls={true}
-                />
-                <Line
-                  type="monotone"
-                  dataKey="forecastLower"
-                  stroke="#F59E0B"
-                  strokeWidth={1}
-                  strokeDasharray="3 3"
-                  strokeOpacity={0.5}
-                  dot={false}
-                  data={fullForecastData}
-                  connectNulls={true}
-                />
-              </>
-            )}
-            
+            {/* Layer 2: EMA and Volatility Bands */}
             {config.ema.enabled && (
               <Line
                 type="monotone"
                 dataKey="ema"
-                stroke={config.ema.color}
+                stroke="#14B8A6"
                 strokeWidth={1.5}
                 name={`EMA(${config.ema.period})`}
                 dot={false}
+                isAnimationActive={false}
               />
             )}
             
@@ -740,28 +786,52 @@ export const ChartPreview: React.FC = () => {
                 <Line
                   type="monotone"
                   dataKey="upperBand"
-                  stroke={config.volatilityBands.color}
+                  stroke="#10B981"
                   strokeWidth={1}
                   strokeDasharray="5 5"
+                  strokeOpacity={0.6}
                   name="Upper Band"
                   dot={false}
+                  isAnimationActive={false}
                 />
                 <Line
                   type="monotone"
                   dataKey="lowerBand"
-                  stroke={config.volatilityBands.color}
+                  stroke="#10B981"
                   strokeWidth={1}
                   strokeDasharray="5 5"
+                  strokeOpacity={0.6}
                   name="Lower Band"
                   dot={false}
+                  isAnimationActive={false}
                 />
               </>
             )}
             
-            {/* Signal vertical reference lines with labels */}
+            {/* Layer 3: Forecast with confidence intervals - not shown in single chart view when forecasting disabled */}
+            
+            {/* Layer 4: "Today" marker to delineate forecast boundary */}
+            {chartData.length > 0 && (
+              <ReferenceLine
+                x={todayTimestamp}
+                stroke="#94A3B8"
+                strokeWidth={2}
+                strokeDasharray="8 4"
+                strokeOpacity={0.6}
+                label={{
+                  value: 'Today',
+                  position: 'top',
+                  fill: '#94A3B8',
+                  fontSize: 11,
+                  fontWeight: 'bold',
+                  offset: 10,
+                }}
+              />
+            )}
+            
+            {/* Layer 5: Signal markers - top layer for visibility */}
             {signals.map((signal, idx) => {
               const signalDataPoint = chartData.find(p => {
-                // Find by matching the original market data index
                 const marketIdx = marketData.findIndex(m => m.date === p.fullDate);
                 return marketIdx === signal.index;
               });
@@ -773,6 +843,7 @@ export const ChartPreview: React.FC = () => {
                   stroke={signal.type === 'BUY' ? '#10B981' : '#EF4444'}
                   strokeWidth={2}
                   strokeDasharray="5 5"
+                  strokeOpacity={0.8}
                   label={{
                     value: signal.type === 'BUY' ? '▲ BUY' : '▼ SELL',
                     position: signal.type === 'BUY' ? 'bottom' : 'top',
@@ -780,6 +851,35 @@ export const ChartPreview: React.FC = () => {
                     fontSize: 12,
                     fontWeight: 'bold',
                     offset: signal.type === 'BUY' ? 15 : -15,
+                  }}
+                />
+              );
+            })}
+            
+            {/* Signal markers on price line - BUY: green ▲, SELL: red ▼ */}
+            {chartData.filter(p => p.signal).map((point, idx) => {
+              if (!point.signal || point.isForecast) return null;
+              
+              const isBuy = point.signal === 'BUY';
+              const color = isBuy ? '#10B981' : '#EF4444';
+              
+              // Find the corresponding data point index for rendering
+              const pointIndex = allChartData.findIndex(p => p.dateTimestamp === point.dateTimestamp);
+              if (pointIndex === -1) return null;
+              
+              return (
+                <ReferenceLine
+                  key={`signal-marker-${point.fullDate}-${point.signal}-${idx}`}
+                  x={point.dateTimestamp}
+                  stroke={color}
+                  strokeWidth={0}
+                  label={{
+                    value: isBuy ? '▲' : '▼',
+                    position: isBuy ? 'bottom' : 'top',
+                    fill: color,
+                    fontSize: 14,
+                    fontWeight: 'bold',
+                    offset: isBuy ? 5 : -5,
                   }}
                 />
               );
@@ -830,6 +930,7 @@ export const ChartPreview: React.FC = () => {
           </ComposedChart>
         </ResponsiveContainer>
       </div>
+      )}
 
       <div className="preview-tabs">
         <div className="tab-content">
@@ -901,11 +1002,11 @@ export const ChartPreview: React.FC = () => {
               />
             </div>
             
-            {/* Forecast Panel - Right Side */}
-            {forecastEnabled && activeForecast && (
+            {/* Forecast Panel - Right Side - Show first available forecast */}
+            {forecastEnabled && (simpleForecast || arimaForecast || prophetForecast || lstmForecast) && (
               <div className="forecast-right">
                 <ForecastPanel
-                  forecast={activeForecast}
+                  forecast={simpleForecast || arimaForecast || prophetForecast || lstmForecast}
                   currentPrice={marketData.length > 0 ? marketData[marketData.length - 1].close : 0}
                 />
               </div>

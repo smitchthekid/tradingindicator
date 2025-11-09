@@ -19,8 +19,36 @@ export const ForecastPanel: React.FC<ForecastPanelProps> = ({ forecast, currentP
     );
   }
 
-  const nextWeekPrice = forecast.predicted[Math.min(6, forecast.predicted.length - 1)];
-  const nextMonthPrice = forecast.predicted[forecast.predicted.length - 1];
+  // Check if forecast arrays are empty or invalid
+  if (!forecast.predicted || forecast.predicted.length === 0) {
+    return (
+      <div className="forecast-panel">
+        <h3 className="panel-title">Price Forecast</h3>
+        <div className="no-forecast">
+          <p>Forecast data unavailable. Check date range and try again.</p>
+        </div>
+      </div>
+    );
+  }
+
+  const nextWeekIndex = Math.min(6, forecast.predicted.length - 1);
+  const nextMonthIndex = forecast.predicted.length - 1;
+  
+  const nextWeekPrice = forecast.predicted[nextWeekIndex];
+  const nextMonthPrice = forecast.predicted[nextMonthIndex];
+  
+  // Validate prices are valid numbers
+  if (!nextWeekPrice || isNaN(nextWeekPrice) || !nextMonthPrice || isNaN(nextMonthPrice)) {
+    return (
+      <div className="forecast-panel">
+        <h3 className="panel-title">Price Forecast</h3>
+        <div className="no-forecast">
+          <p>Forecast data is invalid. Please refresh and try again.</p>
+        </div>
+      </div>
+    );
+  }
+  
   const weekChange = ((nextWeekPrice - currentPrice) / currentPrice) * 100;
   const monthChange = ((nextMonthPrice - currentPrice) / currentPrice) * 100;
 
@@ -67,13 +95,13 @@ export const ForecastPanel: React.FC<ForecastPanelProps> = ({ forecast, currentP
           </div>
         </div>
         
-        {forecast.metrics && (
+        {forecast.metrics && forecast.metrics.directionalAccuracy !== undefined && (
           <div className="forecast-metrics">
             <div className="metric-row">
               <span>Directional Accuracy:</span>
-              <span>{(forecast.metrics.directionalAccuracy! * 100).toFixed(1)}%</span>
+              <span>{(forecast.metrics.directionalAccuracy * 100).toFixed(1)}%</span>
             </div>
-            {forecast.metrics.rmse && (
+            {forecast.metrics.rmse !== undefined && (
               <div className="metric-row">
                 <span>RMSE:</span>
                 <span>${forecast.metrics.rmse.toFixed(2)}</span>

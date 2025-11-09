@@ -23,7 +23,7 @@ export const defaultConfig: IndicatorConfig = {
   },
   riskManagement: {
     accountSize: 5000,
-    riskPercentage: 2,
+    riskPercentage: 10,
     atrStopLossMultiplier: 2.0,
   },
   symbol: 'BTC',
@@ -31,9 +31,9 @@ export const defaultConfig: IndicatorConfig = {
   apiProvider: 'alphavantage',
   proMode: false,
   forecast: {
-    enabled: false,
+    enabled: true,
     model: 'simple',
-    forecastPeriod: 7,
+    forecastPeriod: 90,
     confidenceLevel: 0.95,
   },
 };

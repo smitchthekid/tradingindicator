@@ -9,8 +9,8 @@ function App() {
   return (
     <Provider>
       <Layout
-        leftPanel={<ConfigPanel />}
-        rightPanel={<ChartPreview />}
+        settingsPanel={<ConfigPanel />}
+        chartPanel={<ChartPreview />}
       />
     </Provider>
   );

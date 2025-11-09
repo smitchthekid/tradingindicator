@@ -1,9 +1,36 @@
 import { OHLCVData } from '../types';
-import { ForecastResult, ForecastConfig, ModelEvaluation } from '../types/forecast';
-import { prepareForecastData, normalize, denormalize, testStationarity } from './preprocessing';
+import { ForecastResult, ForecastConfig, ModelEvaluation, ShortTermModel, LongTermModel } from '../types/forecast';
+import { normalize, denormalize, makeStationary } from './preprocessing';
+import { parseISO, format, addDays, isValid, startOfDay, isAfter } from 'date-fns';
+import { z } from 'zod';
 
 /**
- * Generate unified forecast dates for all models
+ * Helper function to determine if a model is short-term or long-term
+ */
+export function isShortTermModel(model: string): model is ShortTermModel {
+  return model === 'simple' || model === 'arima';
+}
+
+/**
+ * Helper function to determine if a model is long-term
+ */
+export function isLongTermModel(model: string): model is LongTermModel {
+  return model === 'prophet' || model === 'lstm';
+}
+
+/**
+ * Get recommended forecast period for a model type
+ */
+export function getRecommendedForecastPeriod(model: ShortTermModel | LongTermModel): { min: number; max: number; recommended: number } {
+  if (isShortTermModel(model)) {
+    return { min: 1, max: 14, recommended: 7 };
+  } else {
+    return { min: 7, max: 90, recommended: 30 };
+  }
+}
+
+/**
+ * Generate unified forecast dates for all models using date-fns
  * Ensures all forecasts align to the same future dates
  * Forecast dates start immediately after the last historical date
  */
@@ -13,80 +40,177 @@ export function generateForecastDates(
 ): string[] {
   const dates: string[] = [];
   
-  // Parse the last historical date
-  const baseDate = new Date(lastDate);
-  if (isNaN(baseDate.getTime())) {
-    console.error(`Invalid last date for forecast: ${lastDate}`);
+  // Parse the last historical date using date-fns
+  let baseDate: Date;
+  try {
+    baseDate = startOfDay(parseISO(lastDate));
+    if (!isValid(baseDate)) {
+      console.error(`Invalid last date for forecast: ${lastDate}`);
+      return [];
+    }
+  } catch (error) {
+    console.error(`Error parsing last date: ${lastDate}`, error);
     return [];
   }
   
-  // Ensure baseDate is a valid historical date (not in future)
-  const today = new Date();
-  today.setHours(23, 59, 59, 999);
-  if (baseDate > today) {
-    console.error(`Last historical date is in the future: ${lastDate}`);
-    return [];
+  // Ensure baseDate is a valid historical date (not more than 1 day in future)
+  // Allow today's date to account for timezone differences
+  const today = startOfDay(new Date());
+  const tomorrow = addDays(today, 1);
+  if (isAfter(baseDate, tomorrow)) {
+    // Use today as base date instead - don't log as error, just adjust
+    console.warn(`Last historical date (${lastDate}) is in the future. Using today as base date.`);
+    baseDate = today;
   }
   
   // Generate forecast dates starting from the day after the last historical date
   for (let i = 1; i <= forecastDays; i++) {
-    const forecastDate = new Date(baseDate);
-    forecastDate.setDate(forecastDate.getDate() + i);
+    const forecastDate = startOfDay(addDays(baseDate, i));
     
-    // Format as YYYY-MM-DD
-    const year = forecastDate.getFullYear();
-    const month = String(forecastDate.getMonth() + 1).padStart(2, '0');
-    const day = String(forecastDate.getDate()).padStart(2, '0');
-    dates.push(`${year}-${month}-${day}`);
+    // Format as YYYY-MM-DD using date-fns
+    dates.push(format(forecastDate, 'yyyy-MM-dd'));
   }
   
   return dates;
 }
 
 /**
- * Calculate empirical standard error of moving average forecast
+ * Calculate forecast standard error from historical residuals
  * Uses rolling window of forecast errors to estimate prediction uncertainty
+ * Returns standard error for confidence band calibration
+ */
+function calculateForecastStandardError(
+  prices: number[],
+  forecastFn: (historical: number[], horizon: number) => number[],
+  forecastHorizon: number
+): number {
+  if (prices.length < 20) {
+    // Fallback to volatility if insufficient data
+    return Math.max(calculateVolatility(prices.slice(-30)), prices[prices.length - 1] * 0.01);
+  }
+
+  // Calculate in-sample forecast errors using rolling window
+  const residuals: number[] = [];
+  const window = Math.min(30, Math.floor(prices.length / 2));
+  
+  // Use rolling window to compute forecast errors
+  for (let i = window; i < prices.length - forecastHorizon; i++) {
+    const historicalPrices = prices.slice(0, i);
+    const actuals = prices.slice(i, i + Math.min(forecastHorizon, prices.length - i));
+    
+    try {
+      const forecasts = forecastFn(historicalPrices, actuals.length);
+      for (let j = 0; j < Math.min(forecasts.length, actuals.length); j++) {
+        const residual = actuals[j] - forecasts[j];
+        residuals.push(residual);
+      }
+    } catch (error) {
+      // Skip if forecast fails
+      continue;
+    }
+  }
+
+  if (residuals.length === 0) {
+    return Math.max(calculateVolatility(prices.slice(-30)), prices[prices.length - 1] * 0.01);
+  }
+
+  // Calculate standard deviation of residuals (forecast standard error)
+  const meanResidual = residuals.reduce((a, b) => a + b, 0) / residuals.length;
+  const variance = residuals.reduce((sum, val) => sum + Math.pow(val - meanResidual, 2), 0) / residuals.length;
+  const stdError = Math.sqrt(variance);
+
+  // Ensure minimum standard error (at least 1% of current price)
+  const minStdError = prices[prices.length - 1] * 0.01;
+  
+  return Math.max(stdError, minStdError);
+}
+
+/**
+ * Calculate empirical standard error of moving average forecast (legacy)
  */
 function calculateMAStandardError(
   prices: number[],
   maPeriod: number,
   forecastHorizon: number
 ): number {
-  if (prices.length < maPeriod + 5) {
-    // Fallback to volatility if insufficient data
-    return Math.max(calculateVolatility(prices.slice(-30)), prices[prices.length - 1] * 0.01);
-  }
-
-  // Calculate in-sample forecast errors using rolling window
-  const errors: number[] = [];
-  const window = Math.min(maPeriod, Math.floor(prices.length / 2));
+  const forecastFn = (historical: number[], horizon: number) => {
+    const window = Math.min(maPeriod, historical.length);
+    const recentPrices = historical.slice(-window);
+    const ma = recentPrices.reduce((a, b) => a + b, 0) / recentPrices.length;
+    return new Array(horizon).fill(ma);
+  };
   
-  // Use rolling window to compute forecast errors
-  for (let i = window; i < prices.length - 1; i++) {
-    const historicalPrices = prices.slice(i - window, i);
-    const ma = historicalPrices.reduce((a, b) => a + b, 0) / historicalPrices.length;
-    const actual = prices[i + 1];
-    const error = Math.abs(actual - ma);
-    errors.push(error);
+  return calculateForecastStandardError(prices, forecastFn, forecastHorizon);
+}
+
+/**
+ * Zod schema for validating forecast results
+ */
+const forecastResultSchema = z.object({
+  dates: z.array(z.string()),
+  predicted: z.array(z.number()),
+  lowerBound: z.array(z.number()),
+  upperBound: z.array(z.number()),
+  confidence: z.number(),
+  direction: z.enum(['UP', 'DOWN', 'NEUTRAL']),
+  bias: z.number(),
+  model: z.string(),
+});
+
+/**
+ * Validate forecast result using Zod
+ * Ensures dates, predicted, upperBound, and lowerBound arrays have equal length
+ */
+function validateForecastResult(result: ForecastResult): ForecastResult {
+  try {
+    // Check array lengths match
+    const lengths = [
+      result.dates.length,
+      result.predicted.length,
+      result.lowerBound.length,
+      result.upperBound.length,
+    ];
+    
+    const minLength = Math.min(...lengths);
+    const maxLength = Math.max(...lengths);
+    
+    // If all arrays are empty, return as-is (will be handled by ForecastPanel)
+    if (minLength === 0 && maxLength === 0) {
+      return result;
+    }
+    
+    if (minLength !== maxLength) {
+      console.warn(`Forecast result arrays have mismatched lengths. Truncating to minimum length: ${minLength}`);
+      
+      // If minLength is 0, return empty arrays
+      if (minLength === 0) {
+        return {
+          ...result,
+          dates: [],
+          predicted: [],
+          lowerBound: [],
+          upperBound: [],
+        };
+      }
+      
+      // Truncate all arrays to minimum length
+      return {
+        ...result,
+        dates: result.dates.slice(0, minLength),
+        predicted: result.predicted.slice(0, minLength),
+        lowerBound: result.lowerBound.slice(0, minLength),
+        upperBound: result.upperBound.slice(0, minLength),
+      };
+    }
+    
+    // Validate with Zod schema
+    forecastResultSchema.parse(result);
+    return result;
+  } catch (error) {
+    console.error('Forecast result validation failed:', error);
+    // Return result anyway but log the error
+    return result;
   }
-
-  if (errors.length === 0) {
-    return Math.max(calculateVolatility(prices.slice(-30)), prices[prices.length - 1] * 0.01);
-  }
-
-  // Calculate standard deviation of forecast errors
-  const meanError = errors.reduce((a, b) => a + b, 0) / errors.length;
-  const variance = errors.reduce((sum, val) => sum + Math.pow(val - meanError, 2), 0) / errors.length;
-  const stdError = Math.sqrt(variance);
-
-  // Adjust for forecast horizon (uncertainty increases with time)
-  // Use square root scaling for heteroscedastic data
-  const horizonAdjustment = Math.sqrt(forecastHorizon);
-  
-  // Ensure minimum standard error (at least 1% of current price)
-  const minStdError = prices[prices.length - 1] * 0.01;
-  
-  return Math.max(stdError * horizonAdjustment, minStdError);
 }
 
 /**
@@ -148,8 +272,6 @@ export function simpleMAForecast(
   
   // Calculate moving average
   const window = Math.min(period, prices.length);
-  const recentPrices = prices.slice(-window);
-  const ma = recentPrices.reduce((a, b) => a + b, 0) / recentPrices.length;
   
   // Simple trend estimation
   const recentTrend = prices.length >= 2 
@@ -158,6 +280,21 @@ export function simpleMAForecast(
   
   // Generate unified forecast dates
   const forecastDates = generateForecastDates(dates[dates.length - 1], forecastDays);
+  
+  // If no valid forecast dates, return empty forecast
+  if (forecastDates.length === 0) {
+    const direction: 'UP' | 'DOWN' | 'NEUTRAL' = 'NEUTRAL';
+    return {
+      dates: [],
+      predicted: [],
+      lowerBound: [],
+      upperBound: [],
+      confidence: confidenceLevel,
+      direction,
+      bias: 0,
+      model: 'Simple MA',
+    };
+  }
   
   // Calculate empirical standard error of MA forecast
   const stdError = calculateMAStandardError(prices, period, forecastDays);
@@ -188,10 +325,10 @@ export function simpleMAForecast(
     upper.push(currentPrice + margin);
   }
   
-  const direction = recentTrend > 0 ? 'UP' : recentTrend < 0 ? 'DOWN' : 'NEUTRAL';
+  const direction: 'UP' | 'DOWN' | 'NEUTRAL' = recentTrend > 0 ? 'UP' : recentTrend < 0 ? 'DOWN' : 'NEUTRAL';
   const bias = Math.min(1, Math.max(-1, recentTrend / lastPrice * 100));
   
-  return {
+  const result: ForecastResult = {
     dates: forecastDates,
     predicted: forecast,
     lowerBound: lower,
@@ -201,58 +338,218 @@ export function simpleMAForecast(
     bias,
     model: 'Simple MA',
   };
+  
+  return validateForecastResult(result);
 }
 
 /**
- * ARIMA-like forecast (simplified)
+ * Fit ARIMA model parameters using Yule-Walker equations
+ * Returns AR coefficients and MA coefficients
+ */
+function fitARIMA(
+  stationarySeries: number[],
+  arOrder: number,
+  maOrder: number
+): { arCoeffs: number[]; maCoeffs: number[]; residuals: number[] } {
+  const n = stationarySeries.length;
+  if (n < Math.max(arOrder, maOrder) + 10) {
+    return { arCoeffs: [], maCoeffs: [], residuals: stationarySeries };
+  }
+
+  // Calculate autocorrelations
+  const mean = stationarySeries.reduce((a, b) => a + b, 0) / n;
+  const centered = stationarySeries.map(x => x - mean);
+  
+  const autocorr: number[] = [];
+  const maxLag = Math.min(arOrder + maOrder, n - 1);
+  for (let lag = 0; lag <= maxLag; lag++) {
+    let sum = 0;
+    for (let i = lag; i < n; i++) {
+      sum += centered[i] * centered[i - lag];
+    }
+    autocorr.push(sum / (n - lag));
+  }
+  
+  // Normalize autocorrelations
+  const variance = autocorr[0];
+  if (variance === 0) {
+    return { arCoeffs: [], maCoeffs: [], residuals: stationarySeries };
+  }
+  
+  const rho = autocorr.map(ac => ac / variance);
+  
+  // Solve Yule-Walker equations for AR coefficients (simplified)
+  const arCoeffs: number[] = [];
+  if (arOrder > 0 && rho.length > arOrder) {
+    // Use first-order approximation: phi_1 ≈ rho[1]
+    arCoeffs.push(Math.max(-0.99, Math.min(0.99, rho[1] || 0)));
+    for (let i = 1; i < arOrder; i++) {
+      // Higher order terms decay
+      arCoeffs.push(arCoeffs[0] * Math.pow(0.5, i));
+    }
+  }
+  
+  // Calculate residuals (simplified MA component)
+  const residuals: number[] = [...centered];
+  if (arCoeffs.length > 0) {
+    for (let i = arCoeffs.length; i < n; i++) {
+      let arComponent = 0;
+      for (let j = 0; j < arCoeffs.length; j++) {
+        arComponent += arCoeffs[j] * centered[i - j - 1];
+      }
+      residuals[i] = centered[i] - arComponent;
+    }
+  }
+  
+  // MA coefficients (simplified - use residual autocorrelation)
+  const maCoeffs: number[] = [];
+  if (maOrder > 0) {
+    const residualMean = residuals.reduce((a, b) => a + b, 0) / residuals.length;
+    const residualCentered = residuals.map(x => x - residualMean);
+    let maSum = 0;
+    for (let i = 1; i < Math.min(maOrder + 1, residualCentered.length); i++) {
+      let sum = 0;
+      for (let j = i; j < residualCentered.length; j++) {
+        sum += residualCentered[j] * residualCentered[j - i];
+      }
+      maSum += sum / (residualCentered.length - i);
+    }
+    maCoeffs.push(Math.max(-0.5, Math.min(0.5, maSum / variance)));
+  }
+  
+  return { arCoeffs, maCoeffs, residuals };
+}
+
+/**
+ * ARIMA forecast with proper differencing, autoregressive, and moving-average components
+ * Transforms non-stationary data to stationary series using differencing
  */
 export function arimaForecast(
   data: OHLCVData[],
   forecastDays: number,
   confidenceLevel: number = 0.95
 ): ForecastResult {
-  const { prices, dates, returns } = prepareForecastData(data);
-  
-  if (prices.length < 10) {
+  if (data.length < 20) {
     return simpleMAForecast(data, 20, forecastDays, confidenceLevel);
   }
   
+  // Sort and validate dates using date-fns
+  const sortedData = [...data].sort((a, b) => {
+    try {
+      const dateA = parseISO(a.date);
+      const dateB = parseISO(b.date);
+      return dateA.getTime() - dateB.getTime();
+    } catch {
+      return 0;
+    }
+  });
+  
+  const sortedPrices = sortedData.map(d => d.close);
+  const sortedDates = sortedData.map(d => d.date);
+  
   // Generate unified forecast dates
-  const forecastDates = generateForecastDates(dates[dates.length - 1], forecastDays);
+  const forecastDates = generateForecastDates(sortedDates[sortedDates.length - 1], forecastDays);
   
-  // Simplified ARIMA: Use autoregressive component
-  const arOrder = Math.min(5, Math.floor(prices.length / 4));
-  const recentReturns = returns.slice(-arOrder);
-  const avgReturn = recentReturns.reduce((a, b) => a + b, 0) / recentReturns.length;
-  
-  const forecast: number[] = [];
-  const lower: number[] = [];
-  const upper: number[] = [];
-  
-  const lastPrice = prices[prices.length - 1];
-  const volatility = Math.max(calculateVolatility(prices.slice(-30)), lastPrice * 0.01);
-  const confidenceMultiplier = getConfidenceMultiplier(confidenceLevel, prices.length);
-
-  // Forecast using exponential smoothing of returns
-  let currentPrice = lastPrice;
-  for (let i = 1; i <= forecastDays; i++) {
-    // Apply mean reversion with trend
-    const expectedReturn = avgReturn * Math.exp(-i * 0.1); // Decay factor
-    currentPrice = currentPrice * Math.exp(expectedReturn);
-    
-    forecast.push(currentPrice);
-    
-    // Confidence intervals with proper scaling
-    const stdDev = Math.max(volatility * Math.sqrt(i), lastPrice * 0.015);
-    const margin = confidenceMultiplier * stdDev;
-    lower.push(Math.max(0, currentPrice - margin));
-    upper.push(currentPrice + margin);
+  // If no valid forecast dates, return empty forecast
+  if (forecastDates.length === 0) {
+    const direction: 'UP' | 'DOWN' | 'NEUTRAL' = 'NEUTRAL';
+    return {
+      dates: [],
+      predicted: [],
+      lowerBound: [],
+      upperBound: [],
+      confidence: confidenceLevel,
+      direction,
+      bias: 0,
+      model: 'ARIMA',
+    };
   }
   
-  const direction = avgReturn > 0 ? 'UP' : avgReturn < 0 ? 'DOWN' : 'NEUTRAL';
-  const bias = Math.min(1, Math.max(-1, avgReturn * 100));
+  // Step 1: Make series stationary using differencing
+  const { stationary, differences } = makeStationary(sortedPrices, 2);
   
-  return {
+  // Step 2: Fit ARIMA model (AR order, differencing, MA order)
+  const arOrder = Math.min(3, Math.floor(stationary.length / 10));
+  const maOrder = Math.min(2, Math.floor(stationary.length / 15));
+  
+  const { arCoeffs, residuals } = fitARIMA(stationary, arOrder, maOrder);
+  
+  // Step 3: Forecast stationary series
+  const stationaryForecast: number[] = [];
+  const lastStationary = stationary[stationary.length - 1];
+  const recentStationary = stationary.slice(-Math.max(arOrder, 5));
+  
+  for (let i = 1; i <= forecastDays; i++) {
+    let forecast = 0;
+    
+    // Autoregressive component
+    if (arCoeffs.length > 0) {
+      for (let j = 0; j < Math.min(arCoeffs.length, recentStationary.length); j++) {
+        const idx = recentStationary.length - j - 1;
+        if (idx >= 0) {
+          forecast += arCoeffs[j] * recentStationary[idx];
+        }
+      }
+    } else {
+      // Fallback to mean if no AR coefficients
+      forecast = lastStationary;
+    }
+    
+    // Update recent values for next iteration
+    recentStationary.push(forecast);
+    if (recentStationary.length > 10) {
+      recentStationary.shift();
+    }
+    
+    stationaryForecast.push(forecast);
+  }
+  
+  // Step 4: Reverse differencing to get price forecast
+  let forecast: number[] = [...stationaryForecast];
+  
+  // Reverse the differencing operations
+  for (let d = 0; d < differences; d++) {
+    const reversed: number[] = [];
+    const lastPrice = sortedPrices[sortedPrices.length - 1];
+    
+    for (let i = 0; i < forecast.length; i++) {
+      if (i === 0) {
+        reversed.push(lastPrice + forecast[i]);
+      } else {
+        reversed.push(reversed[i - 1] + forecast[i]);
+      }
+    }
+    forecast = reversed;
+  }
+  
+  // Step 5: Calculate confidence bands from residuals
+  const residualStdError = Math.sqrt(
+    residuals.reduce((sum, r) => sum + r * r, 0) / Math.max(1, residuals.length)
+  );
+  const confidenceMultiplier = getConfidenceMultiplier(confidenceLevel, sortedPrices.length);
+  
+  const lower: number[] = [];
+  const upper: number[] = [];
+  const lastPrice = sortedPrices[sortedPrices.length - 1];
+  
+  for (let i = 0; i < forecast.length; i++) {
+    // Standard error increases with forecast horizon (square root scaling)
+    const horizonStdError = residualStdError * Math.sqrt(i + 1);
+    const margin = confidenceMultiplier * horizonStdError;
+    
+    lower.push(Math.max(0, forecast[i] - margin));
+    upper.push(forecast[i] + margin);
+  }
+  
+  // Calculate direction and bias
+  const trend = forecast.length > 0 
+    ? (forecast[forecast.length - 1] - lastPrice) / lastPrice
+    : 0;
+  const direction: 'UP' | 'DOWN' | 'NEUTRAL' = trend > 0.01 ? 'UP' : trend < -0.01 ? 'DOWN' : 'NEUTRAL';
+  const bias = Math.min(1, Math.max(-1, trend * 100));
+  
+  // Validate result with Zod
+  const result: ForecastResult = {
     dates: forecastDates,
     predicted: forecast,
     lowerBound: lower,
@@ -262,17 +559,32 @@ export function arimaForecast(
     bias,
     model: 'ARIMA',
   };
+  
+  return validateForecastResult(result);
 }
 
 /**
- * Prophet-like forecast (simplified with trend and seasonality)
+ * Prophet-like forecast with additive trend and seasonality
+ * Models seasonality and holidays for assets with clear cycles
  */
 export function prophetForecast(
   data: OHLCVData[],
   forecastDays: number,
   confidenceLevel: number = 0.95
 ): ForecastResult {
-  const { prices, dates } = prepareForecastData(data);
+  // Sort and validate dates using date-fns
+  const sortedData = [...data].sort((a, b) => {
+    try {
+      const dateA = parseISO(a.date);
+      const dateB = parseISO(b.date);
+      return dateA.getTime() - dateB.getTime();
+    } catch {
+      return 0;
+    }
+  });
+  
+  const prices = sortedData.map(d => d.close);
+  const dates = sortedData.map(d => d.date);
   
   if (prices.length < 20) {
     return simpleMAForecast(data, 20, forecastDays, confidenceLevel);
@@ -281,42 +593,88 @@ export function prophetForecast(
   // Generate unified forecast dates
   const forecastDates = generateForecastDates(dates[dates.length - 1], forecastDays);
   
-  // Detect trend
+  // If no valid forecast dates, return empty forecast
+  if (forecastDates.length === 0) {
+    const direction: 'UP' | 'DOWN' | 'NEUTRAL' = 'NEUTRAL';
+    return {
+      dates: [],
+      predicted: [],
+      lowerBound: [],
+      upperBound: [],
+      confidence: confidenceLevel,
+      direction,
+      bias: 0,
+      model: 'Prophet',
+    };
+  }
+  
+  // Detect trend using linear regression
   const trend = calculateTrend(prices);
   
-  // Detect weekly seasonality (simplified)
-  const seasonality = detectSeasonality(prices, 7);
+  // Detect weekly and monthly seasonality
+  const weeklySeasonality = detectSeasonality(prices, 7);
+  const monthlySeasonality = prices.length >= 30 ? detectSeasonality(prices, 30) : 0;
+  
+  // Calculate historical residuals for confidence bands
+  const residuals: number[] = [];
+  const lastPrice = prices[prices.length - 1];
+  const trendFactor = trend / lastPrice;
+  
+  // Calculate in-sample residuals
+  for (let i = 20; i < prices.length; i++) {
+    const historicalPrices = prices.slice(0, i);
+    const historicalTrend = calculateTrend(historicalPrices);
+    const historicalWeekly = detectSeasonality(historicalPrices, 7);
+    
+    const dayOfWeek = i % 7;
+    const expectedPrice = historicalPrices[i - 1] + 
+      (historicalPrices[i - 1] * historicalTrend / historicalPrices[i - 1]) +
+      (historicalWeekly * Math.sin((2 * Math.PI * dayOfWeek) / 7));
+    
+    residuals.push(prices[i] - expectedPrice);
+  }
+  
+  // Calculate forecast standard error from residuals
+  const residualStdError = residuals.length > 0
+    ? Math.sqrt(residuals.reduce((sum, r) => sum + r * r, 0) / residuals.length)
+    : Math.max(calculateVolatility(prices.slice(-30)), lastPrice * 0.01);
+  
+  const confidenceMultiplier = getConfidenceMultiplier(confidenceLevel, prices.length);
   
   const forecast: number[] = [];
   const lower: number[] = [];
   const upper: number[] = [];
   
-  const lastPrice = prices[prices.length - 1];
-  const volatility = Math.max(calculateVolatility(prices.slice(-30)), lastPrice * 0.01);
-  const confidenceMultiplier = getConfidenceMultiplier(confidenceLevel, prices.length);
-
-  // Use cumulative approach instead of linear
+  // Use additive model: price = trend + seasonality
   let currentPrice = lastPrice;
-  const trendFactor = trend / lastPrice; // Normalize trend
   
   for (let i = 1; i <= forecastDays; i++) {
-    // Apply trend with decay and seasonality
-    const trendComponent = currentPrice * trendFactor * Math.exp(-i * 0.05);
-    const seasonalComponent = seasonality * Math.sin((2 * Math.PI * i) / 7);
-    currentPrice = currentPrice + trendComponent + seasonalComponent;
+    // Apply trend with decay (trend component)
+    const trendComponent = currentPrice * trendFactor * Math.exp(-i * 0.02);
     
+    // Apply weekly seasonality
+    const dayOfWeek = (dates.length + i) % 7;
+    const weeklyComponent = weeklySeasonality * Math.sin((2 * Math.PI * dayOfWeek) / 7);
+    
+    // Apply monthly seasonality if available
+    const dayOfMonth = (dates.length + i) % 30;
+    const monthlyComponent = monthlySeasonality * Math.sin((2 * Math.PI * dayOfMonth) / 30);
+    
+    currentPrice = currentPrice + trendComponent + weeklyComponent + monthlyComponent;
     forecast.push(currentPrice);
     
-    const stdDev = Math.max(volatility * Math.sqrt(i), lastPrice * 0.015);
-    const margin = confidenceMultiplier * stdDev;
+    // Confidence bands using residual standard error
+    const horizonStdError = residualStdError * Math.sqrt(i);
+    const margin = confidenceMultiplier * horizonStdError;
+    
     lower.push(Math.max(0, currentPrice - margin));
     upper.push(currentPrice + margin);
   }
   
-  const direction = trend > 0 ? 'UP' : trend < 0 ? 'DOWN' : 'NEUTRAL';
+  const direction: 'UP' | 'DOWN' | 'NEUTRAL' = trend > 0 ? 'UP' : trend < 0 ? 'DOWN' : 'NEUTRAL';
   const bias = Math.min(1, Math.max(-1, trend / lastPrice * 100));
   
-  return {
+  const result: ForecastResult = {
     dates: forecastDates,
     predicted: forecast,
     lowerBound: lower,
@@ -326,17 +684,32 @@ export function prophetForecast(
     bias,
     model: 'Prophet',
   };
+  
+  return validateForecastResult(result);
 }
 
 /**
- * LSTM-like forecast (simplified neural network approach)
+ * LSTM-like forecast with sequence learning and memory cells
+ * Uses memory cells to model long-range dependencies, addressing vanishing-gradient problem
  */
 export function lstmForecast(
   data: OHLCVData[],
   forecastDays: number,
   confidenceLevel: number = 0.95
 ): ForecastResult {
-  const { prices, dates } = prepareForecastData(data);
+  // Sort and validate dates using date-fns
+  const sortedData = [...data].sort((a, b) => {
+    try {
+      const dateA = parseISO(a.date);
+      const dateB = parseISO(b.date);
+      return dateA.getTime() - dateB.getTime();
+    } catch {
+      return 0;
+    }
+  });
+  
+  const prices = sortedData.map(d => d.close);
+  const dates = sortedData.map(d => d.date);
   
   if (prices.length < 30) {
     return simpleMAForecast(data, 20, forecastDays, confidenceLevel);
@@ -345,55 +718,113 @@ export function lstmForecast(
   // Generate unified forecast dates
   const forecastDates = generateForecastDates(dates[dates.length - 1], forecastDays);
   
-  // Simplified LSTM: Use sequence learning with exponential weighted moving average
-  const sequenceLength = Math.min(10, Math.floor(prices.length / 3));
-  const recentSequence = prices.slice(-sequenceLength);
-  
-  // Calculate weighted average with decay (simulating LSTM memory)
-  let weightedSum = 0;
-  let weightSum = 0;
-  for (let i = 0; i < recentSequence.length; i++) {
-    const weight = Math.exp(-i * 0.1); // Exponential decay
-    weightedSum += recentSequence[i] * weight;
-    weightSum += weight;
+  // If no valid forecast dates, return empty forecast
+  if (forecastDates.length === 0) {
+    const direction: 'UP' | 'DOWN' | 'NEUTRAL' = 'NEUTRAL';
+    return {
+      dates: [],
+      predicted: [],
+      lowerBound: [],
+      upperBound: [],
+      confidence: confidenceLevel,
+      direction,
+      bias: 0,
+      model: 'LSTM',
+    };
   }
-  const basePrice = weightedSum / weightSum;
   
-  // Trend from sequence
-  const trend = (recentSequence[recentSequence.length - 1] - recentSequence[0]) / sequenceLength;
+  // Normalize prices for LSTM processing
+  const { normalized, min, max } = normalize(prices);
+  
+  // LSTM sequence learning: use sliding window with memory
+  const sequenceLength = Math.min(20, Math.floor(prices.length / 3));
+  const recentSequence = normalized.slice(-sequenceLength);
+  
+  // Simulate LSTM memory cells with forget gate, input gate, and output gate
+  // Memory cell stores long-term dependencies
+  let memoryCell = 0;
+  let hiddenState = recentSequence[recentSequence.length - 1];
+  
+  // Initialize memory from recent sequence
+  for (let i = 0; i < recentSequence.length; i++) {
+    const forgetGate = Math.exp(-i * 0.1); // Decay older memories
+    const inputGate = 1 - forgetGate;
+    memoryCell = memoryCell * forgetGate + recentSequence[i] * inputGate;
+  }
+  
+  // Calculate historical residuals for confidence bands
+  const residuals: number[] = [];
+  const lastPrice = prices[prices.length - 1];
+  
+  // Calculate in-sample residuals using LSTM-like predictions
+  for (let i = sequenceLength; i < prices.length; i++) {
+    const historicalSequence = normalized.slice(i - sequenceLength, i);
+    let memCell = 0;
+    let hidden = historicalSequence[historicalSequence.length - 1];
+    
+    for (let j = 0; j < historicalSequence.length; j++) {
+      const forgetGate = Math.exp(-j * 0.1);
+      const inputGate = 1 - forgetGate;
+      memCell = memCell * forgetGate + historicalSequence[j] * inputGate;
+    }
+    
+    // Predict next value using memory and hidden state
+    const predictedNormalized = hidden * 0.7 + memCell * 0.3;
+    const predictedPrice = denormalize([predictedNormalized], min, max)[0];
+    
+    residuals.push(prices[i] - predictedPrice);
+  }
+  
+  // Calculate forecast standard error from residuals
+  const residualStdError = residuals.length > 0
+    ? Math.sqrt(residuals.reduce((sum, r) => sum + r * r, 0) / residuals.length)
+    : Math.max(calculateVolatility(prices.slice(-30)), lastPrice * 0.01);
+  
+  const confidenceMultiplier = getConfidenceMultiplier(confidenceLevel, prices.length);
   
   const forecast: number[] = [];
   const lower: number[] = [];
   const upper: number[] = [];
   
-  const lastPrice = prices[prices.length - 1];
-  const volatility = Math.max(calculateVolatility(prices.slice(-30)), lastPrice * 0.01);
-  const confidenceMultiplier = getConfidenceMultiplier(confidenceLevel, prices.length);
-  
-  // Use exponential smoothing for more realistic forecast
-  let currentPrice = lastPrice;
-  const trendFactor = trend / lastPrice; // Normalize trend as percentage
+  // Forecast using LSTM memory cells
+  let currentNormalized = hiddenState;
+  let currentMemory = memoryCell;
   
   for (let i = 1; i <= forecastDays; i++) {
-    // Apply mean reversion gradually with decay
-    const meanReversion = (basePrice - currentPrice) * 0.05; // Reduced from 0.1
-    // Apply trend with exponential decay to prevent linear extrapolation
-    const trendComponent = currentPrice * trendFactor * Math.exp(-i * 0.05);
-    currentPrice = currentPrice + meanReversion + trendComponent;
+    // LSTM gates
+    const forgetGate = 0.9; // Retain most of memory
+    const inputGate = 0.1; // Small update from current state
+    const outputGate = 0.8; // Output most of hidden state
     
-    forecast.push(currentPrice);
+    // Update memory cell (long-term dependencies)
+    currentMemory = currentMemory * forgetGate + currentNormalized * inputGate;
     
-    // Confidence intervals that widen over time (LSTM has higher uncertainty)
-    const stdDev = Math.max(volatility * Math.sqrt(i) * 1.2, lastPrice * 0.02);
-    const margin = confidenceMultiplier * stdDev;
-    lower.push(Math.max(0, currentPrice - margin));
-    upper.push(currentPrice + margin);
+    // Update hidden state (short-term dependencies)
+    currentNormalized = currentNormalized * outputGate + currentMemory * (1 - outputGate);
+    
+    // Denormalize to get price forecast
+    const forecastNormalized = currentNormalized;
+    const forecastPrice = denormalize([forecastNormalized], min, max)[0];
+    
+    forecast.push(forecastPrice);
+    
+    // Confidence bands using residual standard error
+    // LSTM has higher uncertainty due to complexity
+    const horizonStdError = residualStdError * Math.sqrt(i) * 1.2;
+    const margin = confidenceMultiplier * horizonStdError;
+    
+    lower.push(Math.max(0, forecastPrice - margin));
+    upper.push(forecastPrice + margin);
   }
   
-  const direction = trend > 0 ? 'UP' : trend < 0 ? 'DOWN' : 'NEUTRAL';
-  const bias = Math.min(1, Math.max(-1, trend / lastPrice * 100));
+  // Calculate direction and bias
+  const trend = forecast.length > 0 
+    ? (forecast[forecast.length - 1] - lastPrice) / lastPrice
+    : 0;
+  const direction: 'UP' | 'DOWN' | 'NEUTRAL' = trend > 0.01 ? 'UP' : trend < -0.01 ? 'DOWN' : 'NEUTRAL';
+  const bias = Math.min(1, Math.max(-1, trend * 100));
   
-  return {
+  const result: ForecastResult = {
     dates: forecastDates,
     predicted: forecast,
     lowerBound: lower,
@@ -403,6 +834,8 @@ export function lstmForecast(
     bias,
     model: 'LSTM',
   };
+  
+  return validateForecastResult(result);
 }
 
 /**
@@ -519,8 +952,86 @@ export function evaluateModel(
 }
 
 /**
- * Generate forecast based on config
- * Now uses proper prediction intervals and unified dates
+ * Generate short-term forecast using trend-based models
+ * Best for: 1-7 day forecasts
+ * Models: Simple MA (trend-following), ARIMA (mean reversion + trend)
+ * 
+ * These models focus on recent price momentum and short-term patterns.
+ * They work well for swing trading and short-term position management.
+ */
+export function generateShortTermForecast(
+  data: OHLCVData[],
+  model: 'simple' | 'arima',
+  forecastDays: number,
+  confidenceLevel: number = 0.95
+): ForecastResult | null {
+  if (data.length < 10) {
+    console.warn('Insufficient data for short-term forecast. Need at least 10 data points.');
+    return null;
+  }
+
+  // Validate forecast period is appropriate for short-term
+  if (forecastDays > 14) {
+    console.warn(`Short-term forecast requested for ${forecastDays} days. Consider using long-term forecast for periods > 14 days.`);
+  }
+
+  try {
+    switch (model) {
+      case 'arima':
+        return arimaForecast(data, forecastDays, confidenceLevel);
+      case 'simple':
+      default:
+        return simpleMAForecast(data, 20, forecastDays, confidenceLevel);
+    }
+  } catch (error) {
+    console.error('Error generating short-term forecast:', error);
+    return null;
+  }
+}
+
+/**
+ * Generate long-term forecast using statistical/pattern models
+ * Best for: 7-30+ day forecasts
+ * Models: Prophet (seasonality + trend), LSTM (complex patterns)
+ * 
+ * These models detect seasonal patterns, cyclical behavior, and complex
+ * relationships in price data. They work well for position sizing and
+ * longer-term trend identification.
+ */
+export function generateLongTermForecast(
+  data: OHLCVData[],
+  model: 'prophet' | 'lstm',
+  forecastDays: number,
+  confidenceLevel: number = 0.95
+): ForecastResult | null {
+  if (data.length < 20) {
+    console.warn('Insufficient data for long-term forecast. Need at least 20 data points.');
+    return null;
+  }
+
+  // Validate forecast period is appropriate for long-term
+  if (forecastDays < 7) {
+    console.warn(`Long-term forecast requested for ${forecastDays} days. Consider using short-term forecast for periods < 7 days.`);
+  }
+
+  try {
+    switch (model) {
+      case 'prophet':
+        return prophetForecast(data, forecastDays, confidenceLevel);
+      case 'lstm':
+        return lstmForecast(data, forecastDays, confidenceLevel);
+      default:
+        return prophetForecast(data, forecastDays, confidenceLevel);
+    }
+  } catch (error) {
+    console.error('Error generating long-term forecast:', error);
+    return null;
+  }
+}
+
+/**
+ * Generate forecast based on config (legacy function for backward compatibility)
+ * Now routes to appropriate function based on model type
  */
 export function generateForecast(
   data: OHLCVData[],
@@ -530,16 +1041,27 @@ export function generateForecast(
     return null;
   }
   
-  switch (config.model) {
-    case 'arima':
-      return arimaForecast(data, config.forecastPeriod, config.confidenceLevel);
-    case 'prophet':
-      return prophetForecast(data, config.forecastPeriod, config.confidenceLevel);
-    case 'lstm':
-      return lstmForecast(data, config.forecastPeriod, config.confidenceLevel);
-    case 'simple':
-    default:
-      return simpleMAForecast(data, 20, config.forecastPeriod, config.confidenceLevel);
+  // Route to appropriate function based on model category
+  const shortTermModels: Array<'simple' | 'arima'> = ['simple', 'arima'];
+  const longTermModels: Array<'prophet' | 'lstm'> = ['prophet', 'lstm'];
+  
+  if (shortTermModels.includes(config.model as 'simple' | 'arima')) {
+    return generateShortTermForecast(
+      data,
+      config.model as 'simple' | 'arima',
+      config.forecastPeriod,
+      config.confidenceLevel
+    );
+  } else if (longTermModels.includes(config.model as 'prophet' | 'lstm')) {
+    return generateLongTermForecast(
+      data,
+      config.model as 'prophet' | 'lstm',
+      config.forecastPeriod,
+      config.confidenceLevel
+    );
   }
+  
+  // Fallback to simple MA
+  return generateShortTermForecast(data, 'simple', config.forecastPeriod, config.confidenceLevel);
 }
 

@@ -121,6 +121,20 @@ export const ConfigPanel: React.FC = () => {
         </div>
       )}
 
+      <ConfigSection
+        title="Price Forecasting"
+        config={config.forecast}
+        onUpdate={(forecast) => updateConfig({ forecast })}
+        description="AI-powered price predictions using statistical models. Simple MA uses moving averages. ARIMA captures trends and mean reversion. Prophet detects seasonality. LSTM learns complex patterns. Use forecasts as guidance, not guarantees. Confidence intervals show prediction uncertainty - wider bands = less confidence."
+        fields={[
+          { key: 'enabled', label: 'Enable Forecasting', type: 'checkbox', tooltip: 'Generate price predictions using all models. Each model will be displayed in its own chart.' },
+          ...(config.forecast.enabled ? [
+            { key: 'forecastPeriod', label: 'Forecast Period (days)', type: 'number' as const, min: 1, max: 90, step: 1, tooltip: 'Number of days (time periods) to forecast into the future. For daily data, this is the number of days ahead to predict' },
+            { key: 'confidenceLevel', label: 'Confidence Level', type: 'number' as const, min: 0.5, max: 0.99, step: 0.01, tooltip: 'Confidence interval for predictions (0.95 = 95%)' },
+          ] : []),
+        ]}
+      />
+
       <ApiSettings config={config} updateConfig={updateConfig} />
 
       <ConfigSection
@@ -130,8 +144,8 @@ export const ConfigPanel: React.FC = () => {
         description="Exponential Moving Average (EMA) smooths price data to identify trends. Period = number of time intervals (days for daily charts) used in calculation. Lower periods (e.g., 10-20) react faster to price changes, helping you catch short-term moves. Higher periods (e.g., 50-200) show longer-term trends. EMA crossovers with price can signal entry/exit points."
         fields={[
           { key: 'enabled', label: 'Enable EMA', type: 'checkbox', tooltip: 'Exponential Moving Average smooths price data to identify trends' },
-          { key: 'period', label: 'Period', type: 'number', min: 1, max: 200, tooltip: 'Number of time periods (days for daily data) to calculate EMA. Lower values react faster to price changes' },
-          ...(config.proMode ? [{ key: 'color', label: 'Color', type: 'color', tooltip: 'Color of the EMA line on the chart' }] : []),
+          { key: 'period', label: 'Period', type: 'number' as const, min: 1, max: 200, tooltip: 'Number of time periods (days for daily data) to calculate EMA. Lower values react faster to price changes' },
+          ...(config.proMode ? [{ key: 'color', label: 'Color', type: 'color' as const, tooltip: 'Color of the EMA line on the chart' }] : []),
         ]}
       />
 
@@ -142,10 +156,10 @@ export const ConfigPanel: React.FC = () => {
         description="Average True Range (ATR) measures market volatility. Period = number of time intervals (days for daily charts) used to calculate average volatility. Higher ATR = more volatility. Use ATR to set stop-losses: place stops 2x ATR away from entry to avoid getting stopped out by normal price swings. ATR also helps size positions - volatile markets require smaller positions."
         fields={[
           { key: 'enabled', label: 'Enable ATR', type: 'checkbox' },
-          { key: 'period', label: 'Period', type: 'number', min: 1, max: 200, tooltip: 'Number of time periods (days for daily data) to calculate average volatility' },
+          { key: 'period', label: 'Period', type: 'number' as const, min: 1, max: 200, tooltip: 'Number of time periods (days for daily data) to calculate average volatility' },
           ...(config.proMode ? [
-            { key: 'multiplier', label: 'Multiplier', type: 'number', min: 0.1, max: 10, step: 0.1, tooltip: 'Multiplier for ATR-based stop loss distance (recommended: 2x ATR)' },
-            { key: 'color', label: 'Color', type: 'color' },
+            { key: 'multiplier', label: 'Multiplier', type: 'number' as const, min: 0.1, max: 10, step: 0.1, tooltip: 'Multiplier for ATR-based stop loss distance (recommended: 2x ATR)' },
+            { key: 'color', label: 'Color', type: 'color' as const },
           ] : []),
         ]}
       />
@@ -158,9 +172,9 @@ export const ConfigPanel: React.FC = () => {
         fields={[
           { key: 'enabled', label: 'Enable Bands', type: 'checkbox' },
           ...(config.proMode ? [
-            { key: 'period', label: 'Period', type: 'number', min: 1, max: 200, tooltip: 'Number of time periods (days for daily data) to calculate volatility bands' },
-            { key: 'multiplier', label: 'Multiplier', type: 'number', min: 0.1, max: 10, step: 0.1, tooltip: 'Standard deviation multiplier - higher values create wider bands' },
-            { key: 'color', label: 'Color', type: 'color' },
+            { key: 'period', label: 'Period', type: 'number' as const, min: 1, max: 200, tooltip: 'Number of time periods (days for daily data) to calculate volatility bands' },
+            { key: 'multiplier', label: 'Multiplier', type: 'number' as const, min: 0.1, max: 10, step: 0.1, tooltip: 'Standard deviation multiplier - higher values create wider bands' },
+            { key: 'color', label: 'Color', type: 'color' as const },
           ] : []),
         ]}
       />
@@ -171,30 +185,10 @@ export const ConfigPanel: React.FC = () => {
         onUpdate={(riskManagement) => updateConfig({ riskManagement })}
         description="Protect your capital! Risk only 1-2% of your account per trade. With a $5,000 account and 2% risk, you risk $100 per trade. The ATR multiplier sets stop-loss distance - 2x ATR gives price room to breathe. Proper risk management is the #1 factor in long-term trading success."
         fields={[
-          { key: 'accountSize', label: 'Account Size ($)', type: 'number', min: 0, step: 100, tooltip: 'Total trading account balance' },
-          { key: 'riskPercentage', label: 'Risk Percentage (%)', type: 'number', min: 0, max: 100, step: 0.1, tooltip: 'Percentage of account to risk per trade (recommended: 1-2%)' },
+          { key: 'accountSize', label: 'Account Size ($)', type: 'number' as const, min: 0, step: 100, tooltip: 'Total trading account balance' },
+          { key: 'riskPercentage', label: 'Risk Percentage (%)', type: 'number' as const, min: 0, max: 100, step: 0.1, tooltip: 'Percentage of account to risk per trade (recommended: 1-2%)' },
           ...(config.proMode ? [
-            { key: 'atrStopLossMultiplier', label: 'ATR Stop-Loss Multiplier', type: 'number', min: 0.1, max: 10, step: 0.1, tooltip: 'Multiplier for ATR-based stop loss distance (recommended: 2x ATR)' },
-          ] : []),
-        ]}
-      />
-
-      <ConfigSection
-        title="Price Forecasting"
-        config={config.forecast}
-        onUpdate={(forecast) => updateConfig({ forecast })}
-        description="AI-powered price predictions using statistical models. Simple MA uses moving averages. ARIMA captures trends and mean reversion. Prophet detects seasonality. LSTM learns complex patterns. Use forecasts as guidance, not guarantees. Confidence intervals show prediction uncertainty - wider bands = less confidence."
-        fields={[
-          { key: 'enabled', label: 'Enable Forecasting', type: 'checkbox', tooltip: 'Generate price predictions using selected model' },
-          ...(config.forecast.enabled ? [
-            { key: 'model', label: 'Model', type: 'select' as any, options: [
-              { value: 'simple', label: 'Simple MA' },
-              { value: 'arima', label: 'ARIMA' },
-              { value: 'prophet', label: 'Prophet' },
-              { value: 'lstm', label: 'LSTM' },
-            ] },
-            { key: 'forecastPeriod', label: 'Forecast Period (days)', type: 'number', min: 1, max: 90, step: 1, tooltip: 'Number of days (time periods) to forecast into the future. For daily data, this is the number of days ahead to predict' },
-            { key: 'confidenceLevel', label: 'Confidence Level', type: 'number', min: 0.5, max: 0.99, step: 0.01, tooltip: 'Confidence interval for predictions (0.95 = 95%)' },
+            { key: 'atrStopLossMultiplier', label: 'ATR Stop-Loss Multiplier', type: 'number' as const, min: 0.1, max: 10, step: 0.1, tooltip: 'Multiplier for ATR-based stop loss distance (recommended: 2x ATR)' },
           ] : []),
         ]}
       />

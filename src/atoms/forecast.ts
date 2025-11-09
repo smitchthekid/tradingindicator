@@ -106,10 +106,19 @@ class ForecastCache {
 
 export const forecastCache = new ForecastCache();
 
+// Expose cache clearing to window for debugging
+if (typeof window !== 'undefined') {
+  (window as any).forecastCache = forecastCache;
+  (window as any).clearForecastCache = () => {
+    forecastCache.clear();
+    console.log('Forecast cache cleared');
+  };
+}
+
 // Base atoms for forecast state
 export const forecastModelAtom = atom<'simple' | 'arima' | 'prophet' | 'lstm'>('simple');
-export const forecastEnabledAtom = atom<boolean>(false);
-export const forecastPeriodAtom = atom<number>(7);
+export const forecastEnabledAtom = atom<boolean>(true);
+export const forecastPeriodAtom = atom<number>(90);
 export const forecastConfidenceAtom = atom<number>(0.95);
 
 // Derived atom for current forecast config

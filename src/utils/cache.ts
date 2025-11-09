@@ -91,9 +91,24 @@ export function clearCache(): void {
         localStorage.removeItem(key);
       }
     });
+    console.log('Market data cache cleared');
   } catch (error) {
     console.warn('Failed to clear cache:', error);
   }
+}
+
+/**
+ * Clear all application cache (market data + forecast cache)
+ * Call this when interface is broken or needs reset
+ */
+export function clearAllCache(): void {
+  clearCache();
+  // Also clear forecast cache if available
+  if (typeof window !== 'undefined' && (window as any).forecastCache) {
+    (window as any).forecastCache.clear();
+    console.log('Forecast cache cleared');
+  }
+  console.log('All caches cleared');
 }
 
 /**
