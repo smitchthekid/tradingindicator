@@ -72,7 +72,7 @@ export const validationErrorsAtom = atom((get) => {
 // Persist config to localStorage whenever it changes
 export const persistConfigAtom = atom(
   null,
-  (get, set, update: IndicatorConfig) => {
+  (_get, set, update: IndicatorConfig) => {
     set(configAtom, update);
     try {
       localStorage.setItem('indicator-config', JSON.stringify(update));

@@ -1,4 +1,3 @@
-import React from 'react';
 import { Provider } from 'jotai';
 import { Layout } from './components/Layout';
 import { ConfigPanel } from './components/ConfigPanel';

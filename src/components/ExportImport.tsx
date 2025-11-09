@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useAtom } from 'jotai';
 import { configAtom, persistConfigAtom } from '../atoms/config';
-import { IndicatorConfig, Preset } from '../types';
+import { Preset } from '../types';
 import './ExportImport.css';
 
 export const ExportImport: React.FC = () => {

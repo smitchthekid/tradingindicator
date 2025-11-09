@@ -58,7 +58,7 @@ export const ForecastPanel: React.FC<ForecastPanelProps> = ({ forecast, currentP
     return 'var(--text-muted)';
   };
 
-  const getBiasText = (bias: number, direction: string) => {
+  const getBiasText = (bias: number, _direction: string) => {
     if (bias > 0.1) return 'Model expects higher prices—consider buying';
     if (bias < -0.1) return 'Model expects lower prices—consider selling';
     return 'Model suggests neutral outlook';

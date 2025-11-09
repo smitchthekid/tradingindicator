@@ -3,7 +3,7 @@
 ## ✅ Remote Already Added!
 
 Your remote is configured:
-- **URL:** https://github.com/smitchthekid/TradingIndicator.git
+- **URL:** https://github.com/pleasecart/tradingindicator.git
 - **Branch:** master
 
 ## Next Steps:
@@ -39,7 +39,7 @@ Once you've pushed the first time, you can:
 ## Your Repository
 
 Once pushed, your code will be at:
-**https://github.com/smitchthekid/TradingIndicator**
+**https://github.com/pleasecart/tradingindicator**
 
 ## Troubleshooting
 

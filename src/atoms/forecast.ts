@@ -95,7 +95,7 @@ class ForecastCache {
   // Remove entries for a specific symbol when data changes
   evictSymbol(symbol: string): void {
     const keysToDelete: string[] = [];
-    for (const [key, entry] of this.cache.entries()) {
+    for (const [key] of this.cache.entries()) {
       if (key.includes(`:${symbol}:`)) {
         keysToDelete.push(key);
       }

@@ -140,7 +140,6 @@ export function calculateIndicators(
     const latestATR = result.atr[result.atr.length - 1];
     const riskAmount = (config.riskManagement.accountSize * config.riskManagement.riskPercentage) / 100;
     const stopLossDistance = latestATR * config.riskManagement.atrStopLossMultiplier;
-    const latestClose = data[data.length - 1].close;
     
     if (stopLossDistance > 0) {
       result.positionSize = Math.floor(riskAmount / stopLossDistance);
