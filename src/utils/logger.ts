@@ -19,15 +19,27 @@ export const setAlertSetter = (setter: (updater: (prev: any[]) => any[]) => void
 
 const addAlert = (type: 'warning' | 'error' | 'info' | 'success', message: string, source?: string) => {
   if (setAlerts) {
-    const alert = {
-      id: generateAlertId(),
-      type,
-      message,
-      timestamp: Date.now(),
-      source,
-      dismissible: true,
-    };
-    setAlerts((prev: any[]) => [...prev, alert]);
+    // Check if an alert with the same message already exists to prevent duplicates
+    setAlerts((prev: any[]) => {
+      // Check if this exact message already exists
+      const duplicateExists = prev.some(
+        (alert) => alert.message === message && alert.type === type && alert.source === source
+      );
+      
+      if (duplicateExists) {
+        return prev; // Don't add duplicate
+      }
+      
+      const alert = {
+        id: generateAlertId(),
+        type,
+        message,
+        timestamp: Date.now(),
+        source,
+        dismissible: true,
+      };
+      return [...prev, alert];
+    });
   }
 };
 
