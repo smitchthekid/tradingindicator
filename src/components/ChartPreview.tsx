@@ -485,13 +485,24 @@ export const ChartPreview: React.FC = () => {
     });
     
     if (allPrices.length === 0) {
-      // Return a reasonable default domain if no data
-      return [0, 100] as [number, number];
+      // Return null to trigger auto domain calculation in HistoricalChart
+      if (import.meta.env.DEV) {
+        console.warn('[ChartPreview] No prices available for Y-domain calculation, will use auto');
+      }
+      return null as any; // Return null to trigger fallback in HistoricalChart
     }
     
     const sorted = [...allPrices].sort((a, b) => a - b);
     const minPrice = sorted[0];
     const maxPrice = sorted[sorted.length - 1];
+    
+    // Validate prices are reasonable
+    if (minPrice <= 0 || maxPrice <= 0 || isNaN(minPrice) || isNaN(maxPrice) || minPrice >= maxPrice) {
+      if (import.meta.env.DEV) {
+        console.warn('[ChartPreview] Invalid price range for Y-domain, will use auto', { minPrice, maxPrice });
+      }
+      return null as any;
+    }
     
     // Use actual min/max with padding - don't extend below actual data
     const padding = (maxPrice - minPrice) * 0.05;
@@ -500,6 +511,14 @@ export const ChartPreview: React.FC = () => {
       Math.max(0, minPrice - padding), 
       maxPrice + padding
     ];
+    
+    // Final validation
+    if (domain[0] >= domain[1] || isNaN(domain[0]) || isNaN(domain[1]) || domain[0] < 0) {
+      if (import.meta.env.DEV) {
+        console.warn('[ChartPreview] Invalid calculated domain, will use auto', domain);
+      }
+      return null as any;
+    }
     
     if (import.meta.env.DEV) {
       console.log(`[ChartPreview] Y-axis domain calculated: [${domain[0].toFixed(2)}, ${domain[1].toFixed(2)}] from ${allPrices.length} prices (min: ${minPrice.toFixed(2)}, max: ${maxPrice.toFixed(2)})`);

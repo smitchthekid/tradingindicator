@@ -66,6 +66,20 @@ select {
   appearance: none;
 }
 
+/* Exclude checkboxes from appearance: none - they need their default appearance */
+input[type="checkbox"] {
+  -webkit-appearance: checkbox;
+  appearance: checkbox;
+  width: auto;
+  height: auto;
+  padding: 0;
+  margin: 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  accent-color: var(--accent-blue);
+}
+
 /* Desktop: smaller font for compact layout */
 @media (min-width: 768px) {
   input,

@@ -55,7 +55,11 @@
   min-height: 20px;
   cursor: pointer;
   accent-color: var(--accent-blue);
-  /* Better touch target for mobile */
+  -webkit-appearance: checkbox;
+  appearance: checkbox;
+  /* Ensure checkbox is visible */
+  opacity: 1;
+  filter: brightness(1.2);
 }
 
 @media (min-width: 768px) {

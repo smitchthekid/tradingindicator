@@ -39,6 +39,11 @@
   height: 16px;
   cursor: pointer;
   accent-color: var(--accent-blue);
+  -webkit-appearance: checkbox;
+  appearance: checkbox;
+  /* Ensure checkbox is visible */
+  opacity: 1;
+  filter: brightness(1.2);
 }
 
 .config-header h2 {
