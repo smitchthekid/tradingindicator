@@ -1,43 +1,78 @@
 // src/components/NewChart/hooks/useChartData.ts
 
-import { useState, useEffect, useMemo } from 'react';
+import { useMemo } from 'react';
+import { useAtom } from 'jotai';
 import { ChartDataPoint, ForecastPoint, SignalIndicator, FibonacciLevel } from '../types';
+import { marketDataAtom } from '../../../atoms/data';
+import { 
+  simpleForecastAtom, 
+  arimaForecastAtom, 
+  prophetForecastAtom, 
+  lstmForecastAtom,
+  forecastModelAtom,
+} from '../../../atoms/forecast';
+import { ForecastResult } from '../../../types/forecast';
+import { TradingSignal } from '../../../types';
+import { useIndicators } from '../../../hooks/useIndicators';
+import { configAtom } from '../../../atoms/config';
+import { normalizeDate } from '../../../utils/chartData';
 
-// --- MOCK DATA ---
-// In a real application, you would fetch this from an API.
-const MOCK_API_DATA = Array.from({ length: 50 }, (_, i) => {
-  const open = 100 + i + Math.random() * 10;
-  const close = 100 + i + Math.random() * 10 + (Math.random() > 0.5 ? 2 : -2);
-  return {
-    date: new Date(2025, 0, i + 1).getTime(),
-    open,
-    close,
-    volume: 10000 + Math.random() * 5000,
-  };
-});
+/**
+ * Convert ForecastResult to ForecastPoint array
+ */
+function convertForecastToPoints(forecast: ForecastResult | null, lastHistoricalDate?: Date): ForecastPoint[] {
+  if (!forecast || !forecast.dates.length || !lastHistoricalDate) {
+    return [];
+  }
 
-// Mock forecast data
-const MOCK_FORECAST_DATA = Array.from({ length: 10 }, (_, i) => {
-  const lastPrice = MOCK_API_DATA[MOCK_API_DATA.length - 1].close;
-  const trend = 1 + (i * 0.02); // Slight upward trend
-  const noise = (Math.random() - 0.5) * 5;
-  return {
-    date: new Date(2025, 0, MOCK_API_DATA.length + i + 1).getTime(),
-    predicted: lastPrice * trend + noise,
-    lowerBound: (lastPrice * trend + noise) * 0.95,
-    upperBound: (lastPrice * trend + noise) * 1.05,
-  };
-});
+  const points: ForecastPoint[] = [];
+  
+  for (let idx = 0; idx < forecast.dates.length; idx++) {
+    const date = forecast.dates[idx];
+    const dateObj = normalizeDate(date);
+    
+    // Only include future dates
+    if (dateObj.getTime() <= lastHistoricalDate.getTime()) {
+      continue;
+    }
+    
+    if (idx >= forecast.predicted.length) continue;
+    
+    const predicted = forecast.predicted[idx];
+    const lower = forecast.lowerBound?.[idx];
+    const upper = forecast.upperBound?.[idx];
+    
+    if (isNaN(predicted)) continue;
+    
+    points.push({
+      dateTimestamp: dateObj.getTime(),
+      predicted,
+      lowerBound: lower && !isNaN(lower) ? lower : undefined,
+      upperBound: upper && !isNaN(upper) ? upper : undefined,
+    });
+  }
+  
+  return points.sort((a, b) => a.dateTimestamp - b.dateTimestamp);
+}
 
-// Mock signals (buy/sell indicators)
-const MOCK_SIGNALS: Array<{ date: number; type: 'BUY' | 'SELL'; price: number; isForecast?: boolean }> = [
-  { date: MOCK_API_DATA[10].date, type: 'BUY', price: MOCK_API_DATA[10].close, isForecast: false },
-  { date: MOCK_API_DATA[25].date, type: 'SELL', price: MOCK_API_DATA[25].close, isForecast: false },
-  { date: MOCK_API_DATA[35].date, type: 'BUY', price: MOCK_API_DATA[35].close, isForecast: false },
-  { date: MOCK_FORECAST_DATA[3].date, type: 'SELL', price: MOCK_FORECAST_DATA[3].predicted, isForecast: true },
-  { date: MOCK_FORECAST_DATA[7].date, type: 'BUY', price: MOCK_FORECAST_DATA[7].predicted, isForecast: true },
-];
-// --- END MOCK DATA ---
+/**
+ * Convert TradingSignal to SignalIndicator
+ */
+function convertSignalsToIndicators(signals: TradingSignal[], lastHistoricalDate?: Date): SignalIndicator[] {
+  if (!signals || signals.length === 0) return [];
+  
+  return signals.map(signal => {
+    const signalDate = normalizeDate(signal.date);
+    const isForecast = lastHistoricalDate ? signalDate.getTime() > lastHistoricalDate.getTime() : false;
+    
+    return {
+      dateTimestamp: signalDate.getTime(),
+      type: signal.type,
+      price: signal.price,
+      isForecast,
+    };
+  });
+}
 
 /**
  * Calculate Fibonacci retracement levels
@@ -63,96 +98,85 @@ function calculateFibonacciLevels(data: ChartDataPoint[]): FibonacciLevel[] {
 }
 
 /**
- * A hook to fetch and process chart data.
- * It returns the processed data along with loading and error states.
+ * A hook to process chart data from real market data
  */
 export const useChartData = () => {
-  const [data, setData] = useState<ChartDataPoint[]>([]);
-  const [forecastData, setForecastData] = useState<ForecastPoint[]>([]);
-  const [signals, setSignals] = useState<SignalIndicator[]>([]);
-  const [loading, setLoading] = useState<boolean>(true);
-  const [error, setError] = useState<string | null>(null);
+  const [marketData] = useAtom(marketDataAtom);
+  const [config] = useAtom(configAtom);
+  const [forecastModel] = useAtom(forecastModelAtom);
+  const [simpleForecast] = useAtom(simpleForecastAtom);
+  const [arimaForecast] = useAtom(arimaForecastAtom);
+  const [prophetForecast] = useAtom(prophetForecastAtom);
+  const [lstmForecast] = useAtom(lstmForecastAtom);
+  
+  // Get indicators and signals
+  const { indicators, signals } = useIndicators(marketData, config);
 
-  // Calculate Fibonacci levels from the data
+  // Get active forecast based on selected model
+  const activeForecast = useMemo(() => {
+    if (forecastModel === 'arima') return arimaForecast;
+    if (forecastModel === 'prophet') return prophetForecast;
+    if (forecastModel === 'lstm') return lstmForecast;
+    return simpleForecast;
+  }, [forecastModel, simpleForecast, arimaForecast, prophetForecast, lstmForecast]);
+
+  // Process market data into chart data points
+  const data = useMemo(() => {
+    if (!marketData || marketData.length === 0) return [];
+    
+    const processedData: ChartDataPoint[] = [];
+    for (let i = 0; i < marketData.length; i++) {
+      const d = marketData[i];
+      const prev = marketData[i - 1];
+      const prevClose = prev?.close ?? d.close;
+      
+      // Get EMA from indicators if available
+      const ema = indicators?.ema?.[i];
+      
+      processedData.push({
+        dateTimestamp: normalizeDate(d.date).getTime(),
+        close: d.close,
+        volume: d.volume,
+        isUpDay: d.close >= prevClose,
+        ema: ema && !isNaN(ema) ? ema : undefined,
+        isForecast: false,
+      });
+    }
+    
+    return processedData;
+  }, [marketData, indicators]);
+
+  // Process forecast data
+  const forecastData = useMemo(() => {
+    if (!activeForecast || !marketData || marketData.length === 0) return [];
+    
+    const lastDate = normalizeDate(marketData[marketData.length - 1].date);
+    return convertForecastToPoints(activeForecast, lastDate);
+  }, [activeForecast, marketData]);
+
+  // Process signals
+  const processedSignals = useMemo(() => {
+    if (!signals || signals.length === 0 || !marketData || marketData.length === 0) return [];
+    
+    const lastDate = normalizeDate(marketData[marketData.length - 1].date);
+    return convertSignalsToIndicators(signals, lastDate);
+  }, [signals, marketData]);
+
+  // Calculate Fibonacci levels
   const fibonacciLevels = useMemo(() => {
     if (data.length === 0) return [];
     return calculateFibonacciLevels(data);
   }, [data]);
 
-  useEffect(() => {
-    const fetchData = async () => {
-      try {
-        setLoading(true);
-        // In a real app, replace MOCK_API_DATA with an API call.
-        const rawData = await Promise.resolve(MOCK_API_DATA);
-        const rawForecast = await Promise.resolve(MOCK_FORECAST_DATA);
-        const rawSignals = await Promise.resolve(MOCK_SIGNALS);
-
-        // Single transformation step
-        const filteredAndSorted = rawData
-          .filter(d => d.close && d.date) // Ensure essential data exists
-          .sort((a, b) => a.date - b.date); // Sort by date
-
-        // Calculate EMA iteratively since each value depends on the previous
-        const processedData: ChartDataPoint[] = [];
-        for (let i = 0; i < filteredAndSorted.length; i++) {
-          const d = filteredAndSorted[i];
-          const prev = filteredAndSorted[i - 1];
-          const prevClose = prev?.close ?? d.close;
-          const prevEma = processedData[i - 1]?.ema ?? prevClose;
-          // Simple EMA calculation for demonstration
-          const ema = i > 0 
-            ? (d.close * 0.1 + prevEma * 0.9)
-            : d.close;
-          processedData.push({
-            dateTimestamp: d.date,
-            close: d.close,
-            volume: d.volume,
-            isUpDay: d.close >= prevClose,
-            ema: ema,
-            isForecast: false,
-          });
-        }
-
-        // Process forecast data
-        const processedForecast: ForecastPoint[] = rawForecast
-          .map(f => ({
-            dateTimestamp: f.date,
-            predicted: f.predicted,
-            lowerBound: f.lowerBound,
-            upperBound: f.upperBound,
-          }))
-          .sort((a, b) => a.dateTimestamp - b.dateTimestamp);
-
-        // Process signals
-        const processedSignals: SignalIndicator[] = rawSignals.map(s => ({
-          dateTimestamp: s.date,
-          type: s.type,
-          price: s.price,
-          isForecast: s.isForecast ?? false,
-        }));
-
-        setData(processedData);
-        setForecastData(processedForecast);
-        setSignals(processedSignals);
-      } catch (err) {
-        setError('Failed to fetch chart data.');
-        console.error(err);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchData();
-  }, []);
+  const loading = marketData.length === 0;
+  const error = null; // Errors are handled at the app level
 
   return { 
     data, 
     forecastData, 
-    signals, 
+    signals: processedSignals, 
     fibonacciLevels,
     loading, 
     error 
   };
 };
-
