@@ -32,8 +32,8 @@ export const defaultConfig: IndicatorConfig = {
   proMode: false,
   forecast: {
     enabled: true,
-    model: 'prophet', // Use long-term model by default
-    forecastPeriod: 30, // Reduced to 30 days (more reasonable default)
+    model: 'arima', // Use short-term model by default
+    forecastPeriod: 14, // 14 days works well for both short and long-term models without warnings
     confidenceLevel: 0.95,
   },
 };

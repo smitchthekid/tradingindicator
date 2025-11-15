@@ -76,14 +76,22 @@ export const ChartRenderer: React.FC<ChartRendererProps> = ({
 }) => {
   // Combine historical and forecast data for the chart
   const combinedData = useMemo(() => {
+    if (!data || data.length === 0) return [];
+    
     const historical = data.map(d => ({
-      ...d,
-      predicted: undefined,
+      dateTimestamp: d.dateTimestamp,
+      close: d.close,
+      volume: d.volume,
+      ema: d.ema,
+      predicted: undefined, // Historical data doesn't have predicted
+      isForecast: false,
     }));
     
     const forecast = forecastData.map(f => ({
       dateTimestamp: f.dateTimestamp,
-      close: f.predicted,
+      close: f.predicted, // Use predicted as close for forecast points
+      volume: undefined,
+      ema: undefined,
       predicted: f.predicted,
       isForecast: true,
     }));
@@ -125,7 +133,11 @@ export const ChartRenderer: React.FC<ChartRendererProps> = ({
           type="number"
           scale="time"
           domain={xDomain}
-          tickFormatter={(timeStr) => new Date(timeStr).toLocaleDateString()}
+          tickFormatter={(timeStr) => {
+            if (!timeStr) return '';
+            const date = new Date(timeStr);
+            return isNaN(date.getTime()) ? '' : date.toLocaleDateString();
+          }}
           stroke="#A0AEC0"
         />
         <YAxis
@@ -159,7 +171,7 @@ export const ChartRenderer: React.FC<ChartRendererProps> = ({
         {/* Historical Data Layers */}
         <PriceLine />
         <EmaLine />
-        <VolumeBars data={data} />
+        <VolumeBars data={combinedData.filter(d => !d.isForecast)} />
 
         {/* Forecast Line - only shows predicted values from forecast data points */}
         {forecastData.length > 0 && (
@@ -167,11 +179,12 @@ export const ChartRenderer: React.FC<ChartRendererProps> = ({
         )}
 
         {/* Buy/Sell Indicators */}
-        {signals.length > 0 && (
+        {signals.length > 0 && signalData.length > 0 && (
           <Scatter
             yAxisId="left"
             data={signalData}
             dataKey="y"
+            name="Signals"
             shape={BuySellShape}
             isAnimationActive={false}
           />
