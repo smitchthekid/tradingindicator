@@ -22,7 +22,7 @@ import { generateShortTermForecast, generateLongTermForecast } from '../utils/fo
 import { OHLCVData } from '../types';
 import { IndicatorConfig } from '../types';
 import { scheduleIdleCallback, scheduleTasks } from '../utils/scheduler';
-import { logger } from '../utils/logger';
+import { logger, clearForecastAlerts } from '../utils/logger';
 
 export function useForecasts(
   marketData: OHLCVData[],
@@ -42,6 +42,7 @@ export function useForecasts(
   const [, setForecastError] = useAtom(forecastErrorAtom);
   
   const lastSymbolRef = useRef<string>('');
+  const lastPeriodRef = useRef<number>(forecastPeriod);
   
   // Sync config with atoms
   useEffect(() => {
@@ -53,6 +54,11 @@ export function useForecasts(
     }
     if (config.forecast.forecastPeriod !== forecastPeriod) {
       setForecastPeriod(config.forecast.forecastPeriod);
+      // Clear stale forecast alerts when period changes
+      if (lastPeriodRef.current !== config.forecast.forecastPeriod) {
+        clearForecastAlerts();
+        lastPeriodRef.current = config.forecast.forecastPeriod;
+      }
     }
     if (config.forecast.confidenceLevel !== forecastConfidence) {
       setForecastConfidence(config.forecast.confidenceLevel);

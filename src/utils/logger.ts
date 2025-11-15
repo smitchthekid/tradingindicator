@@ -17,6 +17,23 @@ export const setAlertSetter = (setter: (updater: (prev: any[]) => any[]) => void
   setAlerts = setter;
 };
 
+// Function to clear forecast-related alerts when forecast period changes
+export const clearForecastAlerts = () => {
+  if (setAlerts) {
+    setAlerts((prev: any[]) => {
+      return prev.filter((alert) => {
+        // Remove alerts related to forecast period warnings
+        const message = alert.message || '';
+        return !(
+          message.includes('Short-term forecast requested') ||
+          message.includes('Long-term forecast requested') ||
+          message.includes('Consider using')
+        );
+      });
+    });
+  }
+};
+
 const addAlert = (type: 'warning' | 'error' | 'info' | 'success', message: string, source?: string) => {
   if (setAlerts) {
     // Check if an alert with the same message already exists to prevent duplicates
