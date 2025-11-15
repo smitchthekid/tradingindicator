@@ -29,7 +29,9 @@ interface ChartRendererProps {
 // Custom shape for buy/sell indicators
 const BuySellShape = (props: any) => {
   const { cx, cy, payload } = props;
-  if (!payload) return null;
+  if (!payload || cx === undefined || cy === undefined) {
+    return <g />;
+  }
   
   const isBuy = payload.type === 'BUY';
   const isForecast = payload.isForecast;
@@ -161,7 +163,7 @@ export const ChartRenderer: React.FC<ChartRendererProps> = ({
 
         {/* Forecast Line - only shows predicted values from forecast data points */}
         {forecastData.length > 0 && (
-          <ForecastLine forecastData={forecastData} />
+          <ForecastLine />
         )}
 
         {/* Buy/Sell Indicators */}

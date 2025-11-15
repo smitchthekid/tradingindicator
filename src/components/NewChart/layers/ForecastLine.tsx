@@ -1,9 +1,8 @@
 // src/components/NewChart/layers/ForecastLine.tsx
 import React from 'react';
 import { Line } from 'recharts';
-import { ForecastLayerProps } from '../types';
 
-export const ForecastLine: React.FC<ForecastLayerProps> = ({ forecastData }) => {
+export const ForecastLine: React.FC = () => {
   return (
     <Line
       yAxisId="left"
