@@ -24,8 +24,8 @@ export const indicatorConfigSchema = z.object({
     atrStopLossMultiplier: z.number().min(0.1).max(10),
   }),
   symbol: z.string().min(1),
-  apiKey: z.string().min(1),
-  apiProvider: z.enum(['alphavantage', 'eodhd']),
+  apiKey: z.string().optional(), // Optional, not needed for Yahoo Finance
+  apiProvider: z.enum(['yahoo']),
   proMode: z.boolean(),
   forecast: z.object({
     enabled: z.boolean(),

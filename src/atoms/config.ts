@@ -26,14 +26,14 @@ export const defaultConfig: IndicatorConfig = {
     riskPercentage: 10,
     atrStopLossMultiplier: 2.0,
   },
-  symbol: 'BTC',
-  apiKey: 'NKGY112HJBSEHUQV',
-  apiProvider: 'alphavantage',
+  symbol: 'BTC-USD',
+  apiKey: '',
+  apiProvider: 'yahoo',
   proMode: false,
   forecast: {
     enabled: true,
-    model: 'simple',
-    forecastPeriod: 90,
+    model: 'prophet', // Use long-term model by default
+    forecastPeriod: 30, // Reduced to 30 days (more reasonable default)
     confidenceLevel: 0.95,
   },
 };

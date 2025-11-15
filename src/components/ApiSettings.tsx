@@ -1,5 +1,7 @@
 import React from 'react';
+import { useAtom } from 'jotai';
 import { IndicatorConfig } from '../types';
+import { refreshTriggerAtom } from '../atoms/data';
 import './ApiSettings.css';
 
 interface ApiSettingsProps {
@@ -8,6 +10,17 @@ interface ApiSettingsProps {
 }
 
 export const ApiSettings: React.FC<ApiSettingsProps> = ({ config, updateConfig }) => {
+  const [, setRefreshTrigger] = useAtom(refreshTriggerAtom);
+
+  const handleRefresh = () => {
+    if (!config.symbol) {
+      alert('Please enter a symbol first');
+      return;
+    }
+    // Trigger refresh by updating the trigger atom
+    setRefreshTrigger(prev => prev + 1);
+  };
+
   return (
     <div className="api-settings">
       <h3 className="section-title">API Settings</h3>
@@ -19,56 +32,27 @@ export const ApiSettings: React.FC<ApiSettingsProps> = ({ config, updateConfig }
             type="text"
             value={config.symbol}
             onChange={(e) => updateConfig({ symbol: e.target.value.toUpperCase() })}
-            placeholder="AAPL or BTC"
+            placeholder="AAPL or BTC-USD"
           />
           <small className="field-hint">
-            For stocks: AAPL, MSFT, TSLA. For crypto: BTC, ETH, SOL (use BTC, not BTC-USD)
-            <br />
-            <strong>Note:</strong> For cryptocurrency, Alpha Vantage works better than EODHD (which may require premium).
+            For stocks: AAPL, MSFT, TSLA. For crypto: BTC-USD, ETH-USD, SOL-USD (you can also enter BTC and it will be converted to BTC-USD automatically)
           </small>
         </div>
         <div className="field">
-          <label htmlFor="apiProvider">Provider</label>
-          <select
-            id="apiProvider"
-            value={config.apiProvider}
-            onChange={(e) => updateConfig({ apiProvider: e.target.value as 'alphavantage' | 'eodhd' })}
+          <small className="field-hint" style={{ color: 'var(--accent-green)', marginTop: '0.25rem' }}>
+            ✅ Using Yahoo Finance - Free, no API key required. Data is cached for 24 hours to optimize performance.
+          </small>
+        </div>
+        <div className="field refresh-button-container">
+          <button
+            type="button"
+            className="refresh-button"
+            onClick={handleRefresh}
+            disabled={!config.symbol}
+            aria-label="Refresh market data"
           >
-            <option value="alphavantage">Alpha Vantage</option>
-            <option value="eodhd">EODHD</option>
-          </select>
-        </div>
-        <div className="field">
-          <label htmlFor="apiKey">API Key</label>
-          <input
-            id="apiKey"
-            type="password"
-            value={config.apiKey}
-            onChange={(e) => updateConfig({ apiKey: e.target.value })}
-            placeholder="Enter your API key"
-          />
-          <small className="field-hint">
-            Get your API key from{' '}
-            <a
-              href="https://www.alphavantage.co/support/#api-key"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              Alpha Vantage
-            </a>
-            {' '}or{' '}
-            <a
-              href="https://eodhistoricaldata.com/"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              EODHD
-            </a>
-          </small>
-          <div className="api-limit-info">
-            <strong>💡 Token Optimization:</strong> Data is cached for 5 minutes. Use the Refresh button to update. 
-            This reduces API calls and helps stay within rate limits.
-          </div>
+            🔄 Refresh Data
+          </button>
         </div>
       </div>
     </div>

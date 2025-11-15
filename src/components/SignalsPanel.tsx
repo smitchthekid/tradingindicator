@@ -41,10 +41,17 @@ export const SignalsPanel: React.FC<SignalsPanelProps> = ({
             </div>
             <div className="detail-row">
               <span className="detail-label">Risk:Reward:</span>
-              <span className={`detail-value ${latestSignal.riskRewardRatio >= 3 ? 'good-rr' : 'bad-rr'}`}>
+              <span 
+                className={`detail-value ${latestSignal.riskRewardRatio >= 3 ? 'good-rr' : 'bad-rr'}`}
+                style={{ 
+                  color: latestSignal.riskRewardRatio >= 3 ? 'var(--accent-green)' : '#EF4444',
+                  fontWeight: '700',
+                  fontSize: latestSignal.riskRewardRatio < 3 ? '1.1rem' : '1rem'
+                }}
+              >
                 1:{latestSignal.riskRewardRatio.toFixed(2)}
                 {latestSignal.riskRewardRatio < 3 && (
-                  <span className="warning-badge">⚠️ Min 1:3</span>
+                  <span className="warning-badge" style={{ color: '#EF4444', marginLeft: '0.5rem' }}>⚠️ Min 1:3</span>
                 )}
               </span>
             </div>
@@ -82,12 +89,24 @@ export const SignalsPanel: React.FC<SignalsPanelProps> = ({
             </div>
             <div className="risk-row">
               <span>Risk:Reward Ratio:</span>
-              <span className={riskMetrics.riskRewardRatio >= 3 ? 'good-rr' : 'bad-rr'}>
+              <span 
+                className={riskMetrics.riskRewardRatio >= 3 ? 'good-rr' : 'bad-rr'}
+                style={{ 
+                  color: riskMetrics.riskRewardRatio >= 3 ? 'var(--accent-green)' : '#EF4444',
+                  fontWeight: '700',
+                  fontSize: riskMetrics.riskRewardRatio < 3 ? '1.1rem' : '1rem'
+                }}
+              >
                 1:{riskMetrics.riskRewardRatio.toFixed(2)}
               </span>
             </div>
             {riskMetrics.riskRewardRatio < 3 && (
-              <div className="rr-warning">
+              <div className="rr-warning" style={{ 
+                background: 'rgba(239, 68, 68, 0.15)',
+                borderColor: '#EF4444',
+                color: '#EF4444',
+                fontWeight: '600'
+              }}>
                 ⚠️ Minimum 1:3 R:R required for profitable strategies
               </div>
             )}

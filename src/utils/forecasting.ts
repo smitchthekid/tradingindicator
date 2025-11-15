@@ -978,6 +978,7 @@ export function generateShortTermForecast(
   // Validate forecast period is appropriate for short-term
   if (forecastDays > 14) {
     logger.warn(`Short-term forecast requested for ${forecastDays} days. Consider using long-term forecast for periods > 14 days.`);
+    // Note: This warning will appear in the AlertPanel UI component
   }
 
   try {

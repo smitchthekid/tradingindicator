@@ -35,12 +35,41 @@
 
 .api-settings .field input,
 .api-settings .field select {
-  padding: 0.25rem 0.5rem;
-  font-size: 0.75rem;
+  padding: 0.5rem;
+  font-size: 16px; /* Prevent zoom on iOS */
   border-radius: 4px;
   border: 1px solid var(--border-color);
   background: var(--bg-secondary);
   color: var(--text-primary);
+  min-height: 44px; /* Mobile touch target */
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+/* Desktop: smaller font for compact layout */
+@media (min-width: 768px) {
+  .api-settings .field input,
+  .api-settings .field select {
+    font-size: 0.75rem;
+    padding: 0.25rem 0.5rem;
+    min-height: auto;
+  }
+}
+
+.api-settings .field input:focus,
+.api-settings .field select:focus {
+  outline: none;
+  border-color: var(--accent-blue);
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+/* Fix autocomplete styling */
+.api-settings .field input:-webkit-autofill,
+.api-settings .field input:-webkit-autofill:hover,
+.api-settings .field input:-webkit-autofill:focus {
+  -webkit-text-fill-color: var(--text-primary);
+  -webkit-box-shadow: 0 0 0px 1000px var(--bg-secondary) inset;
+  transition: background-color 5000s ease-in-out 0s;
 }
 
 .field-hint {
@@ -74,5 +103,45 @@
   color: var(--accent-blue);
   display: block;
   margin-bottom: 0.25rem;
+}
+
+.refresh-button-container {
+  margin-top: 0.75rem !important;
+  width: 100%;
+}
+
+.refresh-button {
+  width: 100% !important;
+  padding: 0.75rem 1rem !important;
+  background: var(--accent-blue) !important;
+  color: white !important;
+  border: none !important;
+  border-radius: 4px !important;
+  font-size: 0.875rem !important;
+  font-weight: 600 !important;
+  cursor: pointer !important;
+  transition: all 0.2s !important;
+  min-height: 44px !important; /* Mobile touch target */
+  display: block !important;
+  text-align: center !important;
+  box-sizing: border-box !important;
+  margin: 0 !important;
+}
+
+.refresh-button:hover:not(:disabled) {
+  background: #2563EB;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 4px rgba(59, 130, 246, 0.3);
+}
+
+.refresh-button:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+.refresh-button:disabled {
+  opacity: 0.5 !important;
+  cursor: not-allowed !important;
+  background: var(--bg-tertiary) !important;
+  color: var(--text-muted) !important;
 }
 

@@ -83,13 +83,25 @@ export const ForecastPanel: React.FC<ForecastPanelProps> = ({ forecast, currentP
         <div className="forecast-predictions">
           <div className="prediction-item">
             <span className="prediction-label">Next Week:</span>
-            <span className={`prediction-value ${weekChange >= 0 ? 'positive' : 'negative'}`}>
+            <span 
+              className={`prediction-value ${weekChange >= 0 ? 'positive' : 'negative'}`}
+              style={{ 
+                color: weekChange >= 0 ? 'var(--accent-green)' : 'var(--accent-red)',
+                fontWeight: '600'
+              }}
+            >
               ${nextWeekPrice.toFixed(2)} ({weekChange >= 0 ? '+' : ''}{weekChange.toFixed(2)}%)
             </span>
           </div>
           <div className="prediction-item">
             <span className="prediction-label">Next Month:</span>
-            <span className={`prediction-value ${monthChange >= 0 ? 'positive' : 'negative'}`}>
+            <span 
+              className={`prediction-value ${monthChange >= 0 ? 'positive' : 'negative'}`}
+              style={{ 
+                color: monthChange >= 0 ? 'var(--accent-green)' : 'var(--accent-red)',
+                fontWeight: '600'
+              }}
+            >
               ${nextMonthPrice.toFixed(2)} ({monthChange >= 0 ? '+' : ''}{monthChange.toFixed(2)}%)
             </span>
           </div>

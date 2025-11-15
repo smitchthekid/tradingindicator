@@ -15,7 +15,6 @@ import {
 import { IndicatorConfig } from '../types';
 import { ConfigSection } from './ConfigSection';
 import { ApiSettings } from './ApiSettings';
-import { ExportImport } from './ExportImport';
 import './ConfigPanel.css';
 
 export const ConfigPanel: React.FC = () => {
@@ -192,8 +191,6 @@ export const ConfigPanel: React.FC = () => {
           ] : []),
         ]}
       />
-
-      <ExportImport />
     </div>
   );
 };

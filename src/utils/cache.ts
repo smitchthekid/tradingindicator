@@ -7,7 +7,9 @@ interface CachedData {
   provider: string;
 }
 
-const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
+// Extended cache duration to reduce API calls
+// 24 hours for free API tiers, or 1 hour for premium
+const CACHE_DURATION = 24 * 60 * 60 * 1000; // 24 hours (was 5 minutes)
 const CACHE_KEY_PREFIX = 'market-data-cache-';
 
 /**

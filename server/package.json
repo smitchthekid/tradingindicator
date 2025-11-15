@@ -1,0 +1,19 @@
+{
+  "name": "yahoo-finance-proxy",
+  "version": "1.0.0",
+  "description": "Proxy server for Yahoo Finance API to handle CORS",
+  "main": "proxy.js",
+  "scripts": {
+    "start": "node proxy.js",
+    "dev": "node proxy.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "cors": "^2.8.5",
+    "node-fetch": "^2.7.0"
+  },
+  "engines": {
+    "node": ">=14.0.0"
+  }
+}
+

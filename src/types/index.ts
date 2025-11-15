@@ -36,8 +36,8 @@ export interface IndicatorConfig {
   };
   // Symbol
   symbol: string;
-  apiKey: string;
-  apiProvider: 'alphavantage' | 'eodhd';
+  apiKey?: string; // Optional, not needed for Yahoo Finance
+  apiProvider: 'yahoo';
   // UI Settings
   proMode: boolean;
   // Forecasting
