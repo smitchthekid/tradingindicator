@@ -25,6 +25,7 @@ import { AlertPanel } from './AlertPanel';
 
 // Chart components
 import { HistoricalChart, ForecastChart } from './chart';
+import { ChartContainer } from './NewChart';
 
 // Theme
 import { chartTheme } from '../styles/chartTheme';
@@ -44,6 +45,7 @@ export const ChartPreview: React.FC = () => {
   // Local state
   const [lastSymbol, setLastSymbol] = useState<string>('');
   const [errorDismissed, setErrorDismissed] = useState(false);
+  const [useNewChart, setUseNewChart] = useState<boolean>(true); // Toggle for new chart
   
   // Custom hooks - centralized logic
   useAlerts(); // Initialize alert system
@@ -624,39 +626,88 @@ export const ChartPreview: React.FC = () => {
       {/* Alert Panel - Shows backend warnings and errors */}
       <AlertPanel />
       
-      {/* Historical and Forecast charts in separate containers */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', width: '100%', minHeight: '500px' }}>
-        {/* Historical Chart */}
-        <div className="chart-container" style={chartTheme.containerStyle}>
-          <HistoricalChart
-            data={allChartData ?? []}
-            emaEnabled={config.ema.enabled}
-            emaPeriod={config.ema.period}
-            volatilityBandsEnabled={config.volatilityBands.enabled}
-            atrEnabled={config.atr.enabled}
-            atrColor={config.atr.color}
-            yDomain={yDomain}
-            atrDomain={atrDomain}
-            volumeDomain={volumeDomain}
-            atrThreshold={atrThresholds.high}
-            todayTimestamp={todayTimestamp}
-            signals={signals}
-            marketData={marketData}
-            supportResistance={supportResistance}
-            latestATRStopLoss={chartData.length > 0 ? chartData[chartData.length - 1]?.atrStopLossLong : undefined}
-          />
-        </div>
-
-        {/* Forecast Chart */}
-        {forecastEnabled && activeForecast && forecastDataForChart.length > 0 && (
-          <div className="chart-container" style={{ ...chartTheme.containerStyle, height: '260px', minHeight: '260px' }}>
-            <ForecastChart
-              historyTail={historyTail}
-              forecast={forecastDataForChart}
-            />
-          </div>
+      {/* Chart Toggle Button */}
+      <div style={{ 
+        display: 'flex', 
+        justifyContent: 'flex-end', 
+        marginBottom: '1rem',
+        gap: '0.5rem',
+        alignItems: 'center'
+      }}>
+        <span style={{ color: '#A0AEC0', fontSize: '0.875rem' }}>Chart View:</span>
+        <button
+          onClick={() => setUseNewChart(!useNewChart)}
+          style={{
+            padding: '0.5rem 1rem',
+            background: useNewChart ? '#10B981' : '#3B82F6',
+            color: 'white',
+            border: 'none',
+            borderRadius: '6px',
+            cursor: 'pointer',
+            fontSize: '0.875rem',
+            fontWeight: 500,
+          }}
+        >
+          {useNewChart ? '✓ New Chart (Forecast + Fibonacci + Signals)' : 'Switch to New Chart'}
+        </button>
+        {!useNewChart && (
+          <button
+            onClick={() => setUseNewChart(true)}
+            style={{
+              padding: '0.5rem 1rem',
+              background: '#6B7280',
+              color: 'white',
+              border: 'none',
+              borderRadius: '6px',
+              cursor: 'pointer',
+              fontSize: '0.875rem',
+            }}
+          >
+            Old Chart
+          </button>
         )}
       </div>
+
+      {/* New Chart with Forecasting, Fibonacci, and Buy/Sell Indicators */}
+      {useNewChart ? (
+        <div className="chart-container" style={chartTheme.containerStyle}>
+          <ChartContainer />
+        </div>
+      ) : (
+        /* Historical and Forecast charts in separate containers */
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', width: '100%', minHeight: '500px' }}>
+          {/* Historical Chart */}
+          <div className="chart-container" style={chartTheme.containerStyle}>
+            <HistoricalChart
+              data={allChartData ?? []}
+              emaEnabled={config.ema.enabled}
+              emaPeriod={config.ema.period}
+              volatilityBandsEnabled={config.volatilityBands.enabled}
+              atrEnabled={config.atr.enabled}
+              atrColor={config.atr.color}
+              yDomain={yDomain}
+              atrDomain={atrDomain}
+              volumeDomain={volumeDomain}
+              atrThreshold={atrThresholds.high}
+              todayTimestamp={todayTimestamp}
+              signals={signals}
+              marketData={marketData}
+              supportResistance={supportResistance}
+              latestATRStopLoss={chartData.length > 0 ? chartData[chartData.length - 1]?.atrStopLossLong : undefined}
+            />
+          </div>
+
+          {/* Forecast Chart */}
+          {forecastEnabled && activeForecast && forecastDataForChart.length > 0 && (
+            <div className="chart-container" style={{ ...chartTheme.containerStyle, height: '260px', minHeight: '260px' }}>
+              <ForecastChart
+                historyTail={historyTail}
+                forecast={forecastDataForChart}
+              />
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="preview-tabs">
         <div className="tab-content">
