@@ -17,6 +17,8 @@ export async function fetchMarketData(
   provider: 'yahoo' = 'yahoo',
   forceRefresh: boolean = false
 ): Promise<ApiResponse> {
+  // Suppress unused parameter warning - kept for API compatibility
+  void _apiKey;
   // Normalize symbol for cache lookup (to handle both BTC and BTC-USD)
   const normalizedSymbol = symbol.toUpperCase().trim();
   const cryptoSymbols = ['BTC', 'ETH', 'SOL', 'BNB', 'ADA', 'XRP', 'DOT', 'DOGE', 'AVAX', 'SHIB',

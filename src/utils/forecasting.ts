@@ -748,7 +748,7 @@ export function lstmForecast(
   // Simulate LSTM memory cells with forget gate, input gate, and output gate
   // Memory cell stores long-term dependencies
   let memoryCell = 0;
-  let hiddenState = recentSequence[recentSequence.length - 1];
+  const hiddenState = recentSequence[recentSequence.length - 1];
   
   // Initialize memory from recent sequence
   for (let i = 0; i < recentSequence.length; i++) {
@@ -765,7 +765,7 @@ export function lstmForecast(
   for (let i = sequenceLength; i < prices.length; i++) {
     const historicalSequence = normalized.slice(i - sequenceLength, i);
     let memCell = 0;
-    let hidden = historicalSequence[historicalSequence.length - 1];
+    const hidden = historicalSequence[historicalSequence.length - 1];
     
     for (let j = 0; j < historicalSequence.length; j++) {
       const forgetGate = Math.exp(-j * 0.1);

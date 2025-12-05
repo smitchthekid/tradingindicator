@@ -22,7 +22,7 @@ export default defineConfig({
           }
           return path.replace(/^\/api\/yahoo/, '/v8/finance/chart');
         },
-        configure: (proxy, _options) => {
+        configure: (proxy) => {
           proxy.on('error', (err, _req, res) => {
             console.log('Proxy error:', err);
             res.writeHead(500, {

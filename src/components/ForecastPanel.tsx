@@ -58,7 +58,7 @@ export const ForecastPanel: React.FC<ForecastPanelProps> = ({ forecast, currentP
     return 'var(--text-muted)';
   };
 
-  const getBiasText = (bias: number, _direction: string) => {
+  const getBiasText = (bias: number) => {
     if (bias > 0.1) return 'Model expects higher prices—consider buying';
     if (bias < -0.1) return 'Model expects lower prices—consider selling';
     return 'Model suggests neutral outlook';
@@ -77,7 +77,7 @@ export const ForecastPanel: React.FC<ForecastPanelProps> = ({ forecast, currentP
         </div>
         
         <div className="bias-message" style={{ color: getBiasColor(forecast.bias) }}>
-          <strong>📊 {getBiasText(forecast.bias, forecast.direction)}</strong>
+          <strong>📊 {getBiasText(forecast.bias)}</strong>
         </div>
         
         <div className="forecast-predictions">

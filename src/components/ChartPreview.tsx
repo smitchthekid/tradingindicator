@@ -24,8 +24,7 @@ import { MetricsTabs } from './MetricsTabs';
 import { AlertPanel } from './AlertPanel';
 
 // Chart components
-import { HistoricalChart, ForecastChart } from './chart';
-import { ChartContainer } from './NewChart';
+import { SimpleChart, ForecastChart } from './chart';
 
 // Theme
 import { chartTheme } from '../styles/chartTheme';
@@ -45,17 +44,12 @@ export const ChartPreview: React.FC = () => {
   // Local state
   const [lastSymbol, setLastSymbol] = useState<string>('');
   const [errorDismissed, setErrorDismissed] = useState(false);
-  const [useNewChart, setUseNewChart] = useState<boolean>(true); // Toggle for new chart
   
   // Custom hooks - centralized logic
   useAlerts(); // Initialize alert system
   const { indicators, signals, supportResistance, riskMetrics } = useIndicators(marketData, config);
   const {
     forecastEnabled,
-    simpleForecast,
-    arimaForecast,
-    prophetForecast,
-    lstmForecast,
     activeForecast,
   } = useForecasts(marketData, config);
 
@@ -301,7 +295,6 @@ export const ChartPreview: React.FC = () => {
   
   // Normalize today to midnight for comparison
   const todayNormalized = normalizeDate(today);
-  const todayTimestamp = todayNormalized.getTime();
   
   // Helper function to process forecast data for a given forecast result
   const processForecastData = useCallback((forecast: ForecastResult | null): { forecastData: any[], fullForecastData: any[] } => {
@@ -366,58 +359,8 @@ export const ChartPreview: React.FC = () => {
     return { forecastData, fullForecastData };
   }, [lastHistoricalDate, todayNormalized, chartData]);
   
-  // Process forecast data for each model
-  const simpleForecastData = processForecastData(simpleForecast);
-  const arimaForecastData = processForecastData(arimaForecast);
-  const prophetForecastData = processForecastData(prophetForecast);
-  const lstmForecastData = processForecastData(lstmForecast);
-  
-  // Calculate ATR thresholds for background shading
-  const atrThresholds = useMemo(() => {
-    if (!config.atr.enabled || !indicators?.atr || indicators.atr.length === 0) {
-      return { high: null, medium: null };
-    }
-    
-    const validATRs = indicators.atr.filter((atr: number) => !isNaN(atr) && atr > 0);
-    if (validATRs.length === 0) return { high: null, medium: null };
-    
-    const sorted = [...validATRs].sort((a, b) => a - b);
-    const median = sorted[Math.floor(sorted.length / 2)];
-    const q75 = sorted[Math.floor(sorted.length * 0.75)];
-    
-    return {
-      high: q75, // 75th percentile - high volatility
-      medium: median, // 50th percentile - medium volatility
-    };
-  }, [config.atr.enabled, indicators?.atr]);
-  
-  // Calculate volume domain for secondary axis
-  const volumeDomain = useMemo(() => {
-    const volumes = chartData
-      .map((point: any) => point.volume)
-      .filter((vol: number) => !isNaN(vol) && vol > 0);
-    
-    if (volumes.length === 0) return [0, 100] as [number, number];
-    
-    const maxVolume = Math.max(...volumes);
-    return [0, maxVolume] as [number, number];
-  }, [chartData]);
-  
-  // Calculate ATR domain for secondary Y-axis
-  const atrDomain = useMemo(() => {
-    if (!config.atr.enabled || !indicators?.atr) {
-      return [0, 100] as [number, number];
-    }
-    
-    const validATRs = indicators.atr.filter((atr: number) => !isNaN(atr) && atr > 0);
-    if (validATRs.length === 0) return [0, 100] as [number, number];
-    
-    const maxATR = Math.max(...validATRs);
-    const minATR = Math.min(...validATRs);
-    const padding = (maxATR - minATR) * 0.1;
-    
-    return [Math.max(0, minATR - padding), maxATR + padding] as [number, number];
-  }, [config.atr.enabled, indicators?.atr]);
+  // Note: Domain calculations are now handled in SimpleChart component
+  // Forecast data processing is done via activeForecastData below
   
   // Combine historical data for chart rendering
   // Memoize to avoid recalculation on every render
@@ -465,69 +408,7 @@ export const ChartPreview: React.FC = () => {
     return processed;
   }, [chartData]);
 
-  // Calculate Y-axis domain (shared across all charts for consistency)
-  // Use allChartData which is the actual data being rendered
-  const yDomain = useMemo(() => {
-    const allPrices: number[] = [];
-    
-    // Use allChartData which is the actual data being rendered
-    allChartData.forEach((point: any) => {
-      if (point && point.close && !isNaN(point.close) && point.close > 0) {
-        allPrices.push(point.close);
-      }
-    });
-    
-    // Also include forecast data if available
-    [simpleForecastData, arimaForecastData, prophetForecastData, lstmForecastData].forEach(({ forecastData }) => {
-      forecastData.forEach((point: any) => {
-        if (point && point.close && !isNaN(point.close) && point.close > 0) {
-          allPrices.push(point.close);
-        }
-      });
-    });
-    
-    if (allPrices.length === 0) {
-      // Return null to trigger auto domain calculation in HistoricalChart
-      if (import.meta.env.DEV) {
-        console.warn('[ChartPreview] No prices available for Y-domain calculation, will use auto');
-      }
-      return null as any; // Return null to trigger fallback in HistoricalChart
-    }
-    
-    const sorted = [...allPrices].sort((a, b) => a - b);
-    const minPrice = sorted[0];
-    const maxPrice = sorted[sorted.length - 1];
-    
-    // Validate prices are reasonable
-    if (minPrice <= 0 || maxPrice <= 0 || isNaN(minPrice) || isNaN(maxPrice) || minPrice >= maxPrice) {
-      if (import.meta.env.DEV) {
-        console.warn('[ChartPreview] Invalid price range for Y-domain, will use auto', { minPrice, maxPrice });
-      }
-      return null as any;
-    }
-    
-    // Use actual min/max with padding - don't extend below actual data
-    const padding = (maxPrice - minPrice) * 0.05;
-    
-    const domain: [number, number] = [
-      Math.max(0, minPrice - padding), 
-      maxPrice + padding
-    ];
-    
-    // Final validation
-    if (domain[0] >= domain[1] || isNaN(domain[0]) || isNaN(domain[1]) || domain[0] < 0) {
-      if (import.meta.env.DEV) {
-        console.warn('[ChartPreview] Invalid calculated domain, will use auto', domain);
-      }
-      return null as any;
-    }
-    
-    if (import.meta.env.DEV) {
-      console.log(`[ChartPreview] Y-axis domain calculated: [${domain[0].toFixed(2)}, ${domain[1].toFixed(2)}] from ${allPrices.length} prices (min: ${minPrice.toFixed(2)}, max: ${maxPrice.toFixed(2)})`);
-    }
-    
-    return domain;
-  }, [allChartData, simpleForecastData, arimaForecastData, prophetForecastData, lstmForecastData]);
+  // Note: Y-axis domain calculation is now handled in SimpleChart component
 
   // Process forecast data for active forecast - must be before early returns
   const activeForecastData = useMemo(() => {
@@ -626,88 +507,32 @@ export const ChartPreview: React.FC = () => {
       {/* Alert Panel - Shows backend warnings and errors */}
       <AlertPanel />
       
-      {/* Chart Toggle Button */}
-      <div style={{ 
-        display: 'flex', 
-        justifyContent: 'flex-end', 
-        marginBottom: '1rem',
-        gap: '0.5rem',
-        alignItems: 'center'
-      }}>
-        <span style={{ color: '#A0AEC0', fontSize: '0.875rem' }}>Chart View:</span>
-        <button
-          onClick={() => setUseNewChart(!useNewChart)}
-          style={{
-            padding: '0.5rem 1rem',
-            background: useNewChart ? '#10B981' : '#3B82F6',
-            color: 'white',
-            border: 'none',
-            borderRadius: '6px',
-            cursor: 'pointer',
-            fontSize: '0.875rem',
-            fontWeight: 500,
-          }}
-        >
-          {useNewChart ? '✓ New Chart (Forecast + Fibonacci + Signals)' : 'Switch to New Chart'}
-        </button>
-        {!useNewChart && (
-          <button
-            onClick={() => setUseNewChart(true)}
-            style={{
-              padding: '0.5rem 1rem',
-              background: '#6B7280',
-              color: 'white',
-              border: 'none',
-              borderRadius: '6px',
-              cursor: 'pointer',
-              fontSize: '0.875rem',
-            }}
-          >
-            Old Chart
-          </button>
-        )}
-      </div>
-
-      {/* New Chart with Forecasting, Fibonacci, and Buy/Sell Indicators */}
-      {useNewChart ? (
+      {/* Chart Container */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', width: '100%' }}>
+        {/* Main Historical Chart */}
         <div className="chart-container" style={chartTheme.containerStyle}>
-          <ChartContainer />
+          <SimpleChart 
+            data={allChartData} 
+            emaEnabled={config.ema.enabled}
+            atrEnabled={config.atr.enabled}
+            atrColor={config.atr.color}
+            volatilityBandsEnabled={config.volatilityBands.enabled}
+            supportResistance={supportResistance}
+            signals={signals}
+            latestATRStopLoss={chartData.length > 0 ? chartData[chartData.length - 1]?.atrStopLossLong : undefined}
+          />
         </div>
-      ) : (
-        /* Historical and Forecast charts in separate containers */
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', width: '100%', minHeight: '500px' }}>
-          {/* Historical Chart */}
-          <div className="chart-container" style={chartTheme.containerStyle}>
-            <HistoricalChart
-              data={allChartData ?? []}
-              emaEnabled={config.ema.enabled}
-              emaPeriod={config.ema.period}
-              volatilityBandsEnabled={config.volatilityBands.enabled}
-              atrEnabled={config.atr.enabled}
-              atrColor={config.atr.color}
-              yDomain={yDomain}
-              atrDomain={atrDomain}
-              volumeDomain={volumeDomain}
-              atrThreshold={atrThresholds.high}
-              todayTimestamp={todayTimestamp}
-              signals={signals}
-              marketData={marketData}
-              supportResistance={supportResistance}
-              latestATRStopLoss={chartData.length > 0 ? chartData[chartData.length - 1]?.atrStopLossLong : undefined}
+
+        {/* Forecast Chart */}
+        {forecastEnabled && activeForecast && forecastDataForChart.length > 0 && (
+          <div className="chart-container" style={{ ...chartTheme.containerStyle, height: '260px', minHeight: '260px' }}>
+            <ForecastChart
+              historyTail={historyTail}
+              forecast={forecastDataForChart}
             />
           </div>
-
-          {/* Forecast Chart */}
-          {forecastEnabled && activeForecast && forecastDataForChart.length > 0 && (
-            <div className="chart-container" style={{ ...chartTheme.containerStyle, height: '260px', minHeight: '260px' }}>
-              <ForecastChart
-                historyTail={historyTail}
-                forecast={forecastDataForChart}
-              />
-            </div>
-          )}
-        </div>
-      )}
+        )}
+      </div>
 
       <div className="preview-tabs">
         <div className="tab-content">

@@ -56,6 +56,8 @@ export async function fetchYahooFinanceData(
   symbol: string,
   _useProxy: boolean = false
 ): Promise<ApiResponse> {
+  // Suppress unused parameter warning - kept for future proxy support
+  void _useProxy;
   try {
     // Normalize symbol for Yahoo Finance (e.g., BTC -> BTC-USD)
     const normalizedSymbol = normalizeSymbolForYahoo(symbol);

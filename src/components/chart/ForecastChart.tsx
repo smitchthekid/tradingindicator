@@ -1,69 +1,88 @@
 /**
- * Forecast Chart Component
- * Renders a short historical tail (close) plus forecast continuation (predicted).
- * Separate chart, separate axes, no shared ChartAxes or ForecastLayer.
+ * ForecastChart - Separate component for forecast visualization
+ * Renders forecast data with confidence bands
  */
 
-import React, { useMemo } from "react";
+import React, { useMemo } from 'react';
 import {
   ComposedChart,
-  CartesianGrid,
-  XAxis,
-  YAxis,
-  Tooltip,
-  ResponsiveContainer,
   Line,
   Area,
-} from "recharts";
-import { chartTheme } from "../../styles/chartTheme";
-import { ChartLegend } from "./ChartLegend";
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  ResponsiveContainer,
+  Tooltip,
+  ReferenceLine,
+} from 'recharts';
+import { chartTheme } from '../../styles/chartTheme';
 
-export type ForecastPoint = {
+interface ForecastPoint {
   dateTimestamp: number;
-  close?: number; // Historical points use 'close'
-  predicted?: number; // Forecast points use 'predicted'
-  forecastUpper?: number;
+  close: number;
   forecastLower?: number;
+  forecastUpper?: number;
+  isForecast?: boolean;
+  isConnector?: boolean;
   [key: string]: unknown;
-};
-
-interface ForecastChartProps {
-  historyTail: Array<{ dateTimestamp: number; close: number }>;
-  forecast: ForecastPoint[];
 }
 
-/**
- * ForecastChart
- * Renders a short historical tail (close) plus forecast continuation (predicted).
- * Separate chart, separate axes, no shared ChartAxes or ForecastLayer.
- */
+interface ForecastChartProps {
+  historyTail?: ForecastPoint[];
+  forecast?: ForecastPoint[];
+}
+
 export const ForecastChart: React.FC<ForecastChartProps> = ({
-  historyTail,
-  forecast,
+  historyTail = [],
+  forecast = [],
 }) => {
-  const data = useMemo(() => {
-    const history = historyTail ?? [];
-    const fc = forecast ?? [];
-    if (!history.length && !fc.length) return [];
-
-    // Historical points use 'close'; forecast points use 'predicted' or 'close'.
-    // Transform forecast points to have both close (for display) and predicted
-    const transformedForecast = fc.map((point) => ({
-      ...point,
-      // Use predicted if available, otherwise use close
-      predicted: point.predicted ?? point.close,
-      close: point.close ?? point.predicted,
-    }));
-
-    return [...history, ...transformedForecast];
+  // Combine history tail and forecast data
+  const chartData = useMemo(() => {
+    return [...historyTail, ...forecast];
   }, [historyTail, forecast]);
 
-  if (!data || data.length === 0) return null;
+  // Calculate Y-axis domain
+  const yDomain = useMemo(() => {
+    if (!chartData || chartData.length === 0) return ['auto', 'auto'] as [string, string];
+    
+    const allValues: number[] = [];
+    chartData.forEach((point) => {
+      if (point.close && !isNaN(point.close)) allValues.push(point.close);
+      if (point.forecastLower && !isNaN(point.forecastLower)) allValues.push(point.forecastLower);
+      if (point.forecastUpper && !isNaN(point.forecastUpper)) allValues.push(point.forecastUpper);
+    });
+    
+    if (allValues.length === 0) return ['auto', 'auto'] as [string, string];
+    
+    const minValue = Math.min(...allValues);
+    const maxValue = Math.max(...allValues);
+    const padding = (maxValue - minValue) * 0.1;
+    
+    return [
+      Math.max(0, minValue - padding),
+      maxValue + padding,
+    ] as [number, number];
+  }, [chartData]);
+
+  if (!chartData || chartData.length === 0) {
+    return (
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        height: '100%',
+        color: chartTheme.colors.text,
+        fontSize: '1rem',
+      }}>
+        No forecast data available
+      </div>
+    );
+  }
 
   return (
     <ResponsiveContainer width="100%" height="100%">
       <ComposedChart
-        data={data}
+        data={chartData}
         margin={chartTheme.margins.default}
       >
         <CartesianGrid
@@ -71,150 +90,112 @@ export const ForecastChart: React.FC<ForecastChartProps> = ({
           stroke={chartTheme.grid.stroke}
           strokeOpacity={chartTheme.grid.strokeOpacity}
         />
-
+        
         <XAxis
           dataKey="dateTimestamp"
           type="number"
-          domain={["dataMin", "dataMax"]}
+          scale="linear"
+          domain={['dataMin', 'dataMax']}
           stroke={chartTheme.axes.stroke}
           tick={chartTheme.axes.tick}
-          interval="preserveStartEnd"
-          angle={-45}
-          textAnchor="end"
-          height={80}
-          allowDataOverflow={false}
           tickFormatter={(value: number) => {
-            if (!value || isNaN(value)) return "";
+            if (!value || isNaN(value)) return '';
             const date = new Date(value);
-            if (isNaN(date.getTime())) return "";
-            return date.toLocaleDateString("en-US", {
-              month: "short",
-              day: "numeric",
-              year: "numeric",
+            if (isNaN(date.getTime())) return '';
+            return date.toLocaleDateString('en-US', {
+              month: 'short',
+              day: 'numeric',
             });
           }}
         />
-
+        
         <YAxis
-          yAxisId="price"
-          orientation="right"
+          domain={yDomain}
           stroke={chartTheme.axes.stroke}
           tick={chartTheme.axes.tick}
-          width={80}
-          tickFormatter={(value) => {
-            if (isNaN(value) || value === null || value === undefined) return "";
-            const formatted =
-              value >= 1000
-                ? `$${(value / 1000).toFixed(1)}K`
-                : value >= 1
-                ? `$${value.toFixed(2)}`
-                : `$${value.toFixed(4)}`;
-            return formatted;
+          tickFormatter={(value: number) => {
+            if (isNaN(value) || value === null || value === undefined) return '';
+            return value >= 1000
+              ? `$${(value / 1000).toFixed(1)}K`
+              : value >= 1
+              ? `$${value.toFixed(2)}`
+              : `$${value.toFixed(4)}`;
           }}
         />
-
+        
         <Tooltip
           contentStyle={chartTheme.tooltip}
-          labelFormatter={(value) => {
-            if (value && !isNaN(value)) {
-              const date = new Date(value);
-              return date.toLocaleDateString("en-US", {
-                month: "short",
-                day: "numeric",
-                year: "numeric",
-              });
-            }
-            return "";
+          labelFormatter={(value: number) => {
+            if (!value || isNaN(value)) return '';
+            const date = new Date(value);
+            if (isNaN(date.getTime())) return '';
+            return date.toLocaleDateString('en-US', {
+              month: 'short',
+              day: 'numeric',
+              year: 'numeric',
+            });
           }}
-          formatter={(value: any, name: string) => {
-            if (typeof value === "number") {
-              return [`$${value.toFixed(2)}`, name];
-            }
-            return [value, name];
-          }}
+          formatter={(value: number) => `$${value.toFixed(2)}`}
         />
-
-        <ChartLegend />
-
-        {/* Forecast confidence band (upper/lower bounds) */}
+        
+        {/* Historical tail line - only show for non-forecast points */}
+        <Line
+          type="monotone"
+          dataKey="close"
+          stroke={chartTheme.lineStyles.price.stroke}
+          strokeWidth={chartTheme.lineStyles.price.strokeWidth}
+          dot={false}
+          name="Price"
+          connectNulls={true}
+          strokeOpacity={0.5}
+          isAnimationActive={false}
+        />
+        
+        {/* Forecast confidence band - using Area for upper/lower bounds */}
         {forecast.length > 0 && (
           <>
-            <defs>
-              <linearGradient id="forecastGradient" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor={chartTheme.colors.forecast} stopOpacity={0.2} />
-                <stop offset="95%" stopColor={chartTheme.colors.forecast} stopOpacity={0.05} />
-              </linearGradient>
-            </defs>
-            {/* Forecast band area - fills from 0 to upper bound */}
             <Area
-              yAxisId="price"
               type="monotone"
               dataKey="forecastUpper"
               stroke="none"
-              fill="url(#forecastGradient)"
+              fill={chartTheme.colors.forecast}
+              fillOpacity={0.1}
               connectNulls={true}
-              name="Forecast Band"
+              isAnimationActive={false}
+            />
+            <Area
+              type="monotone"
+              dataKey="forecastLower"
+              stroke="none"
+              fill={chartTheme.colors.forecast}
+              fillOpacity={0.1}
+              connectNulls={true}
+              isAnimationActive={false}
+            />
+            
+            {/* Forecast line - only for forecast points */}
+            <Line
+              type="monotone"
+              dataKey="close"
+              stroke={chartTheme.lineStyles.forecast.stroke}
+              strokeWidth={chartTheme.lineStyles.forecast.strokeWidth}
+              strokeDasharray={chartTheme.lineStyles.forecast.strokeDasharray}
+              dot={false}
+              name="Forecast"
+              connectNulls={true}
               isAnimationActive={false}
             />
           </>
         )}
-
-        {/* Historical tail */}
-        <Line
-          yAxisId="price"
-          type="monotone"
-          dataKey="close"
-          dot={false}
-          stroke={chartTheme.lineStyles.price.stroke}
-          strokeWidth={chartTheme.lineStyles.price.strokeWidth}
-          name="Historical"
-          isAnimationActive={false}
-        />
-
-        {/* Forecast continuation */}
-        <Line
-          yAxisId="price"
-          type="monotone"
-          dataKey="predicted"
-          dot={false}
-          stroke={chartTheme.lineStyles.forecast.stroke}
-          strokeWidth={chartTheme.lineStyles.forecast.strokeWidth}
-          strokeDasharray={chartTheme.lineStyles.forecast.strokeDasharray}
-          name="Forecast"
-          isAnimationActive={false}
-        />
-
-        {/* Optional upper bound line */}
-        {forecast.length > 0 && (
-          <Line
-            yAxisId="price"
-            type="monotone"
-            dataKey="forecastUpper"
-            stroke={chartTheme.lineStyles.forecastBound.stroke}
-            strokeWidth={chartTheme.lineStyles.forecastBound.strokeWidth}
-            strokeDasharray={chartTheme.lineStyles.forecastBound.strokeDasharray}
-            strokeOpacity={chartTheme.lineStyles.forecastBound.strokeOpacity}
-            dot={false}
-            connectNulls={true}
-            name="Upper Bound"
-            isAnimationActive={false}
-          />
-        )}
-
-        {/* Optional lower bound line */}
-        {forecast.length > 0 && (
-          <Line
-            yAxisId="price"
-            type="monotone"
-            dataKey="forecastLower"
-            stroke={chartTheme.lineStyles.forecastBound.stroke}
-            strokeWidth={chartTheme.lineStyles.forecastBound.strokeWidth}
-            strokeDasharray={chartTheme.lineStyles.forecastBound.strokeDasharray}
-            strokeOpacity={chartTheme.lineStyles.forecastBound.strokeOpacity}
-            dot={false}
-            connectNulls={true}
-            name="Lower Bound"
-            isAnimationActive={false}
+        
+        {/* Connector line between history and forecast */}
+        {chartData.find((p) => p.isConnector) && (
+          <ReferenceLine
+            x={chartData.find((p) => p.isConnector)?.dateTimestamp}
+            stroke={chartTheme.colors.forecast}
+            strokeWidth={2}
+            strokeDasharray="4 4"
+            strokeOpacity={0.5}
           />
         )}
       </ComposedChart>
