@@ -709,3 +709,5 @@ src/
 
 This summary provides a comprehensive overview of all tools, functions, and architecture used in the Trading Indicator Configurator application. Use this as a reference for rebuilding or extending the application.
 
+
+
